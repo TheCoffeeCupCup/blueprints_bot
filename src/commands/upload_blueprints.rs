@@ -1,6 +1,6 @@
-use colored::Colorize;
+use colored::Colorize as _;
 
-use crate::{AnyError, ansi, discord, get_env};
+use crate::{AnyError, ansi, bot_data, discord};
 
 pub const COMMAND: &'static str = "upload_blueprints";
 pub const MODAL_ID: &'static str = "blueprints_upload_modal";
@@ -37,34 +37,13 @@ pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: twilight_http::client::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
-    let servers = [
-        discord::SelectMenuOptionBuilder::new(
-            get_env("TEST_SERVER_NAME"),
-            get_env("TEST_SERVER_NAME"),
-        )
-        .build(),
-        discord::SelectMenuOptionBuilder::new("Server 2", "Server 2").build(),
-        discord::SelectMenuOptionBuilder::new("Server 3", "Server 3").build(),
-        discord::SelectMenuOptionBuilder::new("Server 4", "Server 4").build(),
-        discord::SelectMenuOptionBuilder::new("Server 5", "Server 5").build(),
-        discord::SelectMenuOptionBuilder::new("Server 6", "Server 6").build(),
-    ];
+    let select_menu =
+        bot_data::create_server_select_menu(None, None, Some(interaction.member.as_ref().unwrap()));
 
-    let mut select_menu = discord::SelectMenuBuilder::new(
-        "server_select",
-        twilight_model::channel::message::component::SelectMenuType::Text,
-    )
-    .min_values(1)
-    .required(true);
-
-    let servers_amount = servers.len();
-    for server in servers {
-        select_menu = select_menu.option(server);
+    if select_menu.options.iter().len() == 0 {
+        respond_to_not_uploader(interaction, interaction_client).await;
+        return Ok(());
     }
-
-    let select_menu = select_menu
-        .max_values(servers_amount.try_into().unwrap())
-        .build();
 
     let server_select_label = discord::Component::Label(
         discord::LabelBuilder::new(
@@ -110,6 +89,30 @@ pub async fn process_command(
         .unwrap();
 
     Ok(())
+}
+
+async fn respond_to_not_uploader(
+    interaction: &discord::InteractionCreate,
+    interaction_client: twilight_http::client::InteractionClient<'_>,
+) {
+    let data = discord::InteractionResponseDataBuilder::new()
+        .content(ansi(
+            "✗ You don't have access to blueprint uploading for any server. If you think this is a mistake, ask IT people for permission."
+                .red()
+                .to_string(),
+        ))
+        .flags(discord::MessageFlags::EPHEMERAL)
+        .build();
+
+    let response = discord::InteractionResponse {
+        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        data: Some(data),
+    };
+
+    interaction_client
+        .create_response(interaction.id, &interaction.token, &response)
+        .await
+        .unwrap();
 }
 
 fn get_selected_servers(
@@ -214,7 +217,7 @@ fn verify_blueprints(
 
         if file_name.contains('/') || file_name.contains('\\') {
             let error = "you, hacking piece of shit, remove / and/or \\ from the filename";
-            response += &format!("\n{}", format!("✗ {} ({})", full_file_name, error).red());
+            response += &format!("{}", format!("\n✗ {} ({})", full_file_name, error).red());
 
             has_error = true;
             continue;
@@ -222,7 +225,7 @@ fn verify_blueprints(
 
         if file_extension != "sbp" && file_extension != "sbpcfg" {
             let error = "wrong file extension, expected .sbp or .sbpcfg";
-            response += &format!("\n{}", format!("✗ {} ({})", full_file_name, error).red());
+            response += &format!("{}", format!("\n✗ {} ({})", full_file_name, error).red());
 
             has_error = true;
             continue;
@@ -233,7 +236,7 @@ fn verify_blueprints(
                 || (file_extension == "sbpcfg" && entry.sbpcfg_count > 1)
             {
                 let error = "file with the same name is provided more than once";
-                response += &format!("\n{}", format!("✗ {} ({})", full_file_name, error).red());
+                response += &format!("{}", format!("\n✗ {} ({})", full_file_name, error).red());
 
                 has_error = true;
                 continue;
@@ -241,7 +244,7 @@ fn verify_blueprints(
 
             if entry.sbp_count == 0 || entry.sbpcfg_count == 0 {
                 let error = "a pair of .sbp and .sbpcfg is expected for each blueprint, but only one provided";
-                response += &format!("\n{}", format!("✗ {} ({})", full_file_name, error).red());
+                response += &format!("{}", format!("\n✗ {} ({})", full_file_name, error).red());
 
                 has_error = true;
                 continue;
@@ -249,18 +252,21 @@ fn verify_blueprints(
         }
 
         // No errors
-        response += &format!("\n{}", format!("✓ {}", full_file_name).green());
+        response += &format!("{}", format!("\n✓ {}", full_file_name).green());
     }
 
-    let error_prefix = "There are errors detected in the submitted files:"
-        .red()
-        .to_string();
+    let error_prefix =
+        "There are errors detected in the submitted files, nothing will be uploaded:"
+            .red()
+            .to_string();
 
     let success_prefix = "The following blueprint files are being uploaded:"
         .green()
         .to_string();
 
-    let servers_suffix = format!(
+    let category_warning_suffix = "\n\n⚠ The blueprints will appear in the \"Unknown\" category after server is restarted. Please move them when you log into the server to keep things organized.".yellow().to_string();
+
+    let selected_servers = format!(
         "\n\nSelected servers: {}.",
         servers
             .iter()
@@ -270,7 +276,9 @@ fn verify_blueprints(
     );
 
     match has_error {
-        false => Ok(ansi(success_prefix + &response + &servers_suffix)),
+        false => Ok(ansi(
+            success_prefix + &response + &category_warning_suffix + &selected_servers,
+        )),
         true => Err(ansi(error_prefix + &response)),
     }
 }

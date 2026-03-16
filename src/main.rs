@@ -7,9 +7,13 @@ use twilight_gateway::StreamExt as _;
 
 use common::{AnyError, ansi, discord, get_env};
 
+use crate::commands::edit_server_uploaders;
+
 #[tokio::main]
 async fn main() -> Result<(), AnyError> {
     dotenv::dotenv()?;
+
+    bot_data::load_data();
 
     let token = get_env("DISCORD_TOKEN");
     let intents = discord::Intents::GUILD_MESSAGES | discord::Intents::MESSAGE_CONTENT;
@@ -28,7 +32,7 @@ async fn main() -> Result<(), AnyError> {
             &[
                 commands::upload_blueprints::create_command(),
                 commands::add_server::create_command(),
-                commands::edit_server::create_command(),
+                commands::edit_server_uploaders::create_command(),
             ],
         )
         .await?;
@@ -84,6 +88,14 @@ async fn handle_interaction_create(
                         .await
                         .unwrap();
                 }
+                commands::edit_server_uploaders::COMMAND => {
+                    commands::edit_server_uploaders::process_command(
+                        &interaction,
+                        interaction_client,
+                    )
+                    .await
+                    .unwrap();
+                }
                 _ => {}
             }
         }
@@ -99,9 +111,45 @@ async fn handle_interaction_create(
                     .await
                     .unwrap();
                 }
+                commands::add_server::MODAL_ID => {
+                    commands::add_server::process_modal_submition(
+                        &interaction,
+                        submit_data,
+                        interaction_client,
+                    )
+                    .await
+                    .unwrap();
+                }
                 _ => {}
             }
         }
+
+        Some(discord::InteractionData::MessageComponent(message_component)) => {
+            match message_component.custom_id.as_str() {
+                "server_select" => edit_server_uploaders::process_server_select(
+                    interaction,
+                    message_component,
+                    interaction_client,
+                )
+                .await
+                .unwrap(),
+                "confirm_edit_uploaders" => edit_server_uploaders::process_uploaders_submition(
+                    interaction,
+                    interaction_client,
+                )
+                .await
+                .unwrap(),
+                "users_list" => edit_server_uploaders::process_users_select(
+                    interaction,
+                    message_component,
+                    interaction_client,
+                )
+                .await
+                .unwrap(),
+                _ => {}
+            }
+        }
+
         _ => {}
     }
 }
@@ -110,27 +158,25 @@ async fn upload_files(files: Vec<commands::upload_blueprints::Attachment>, serve
     let mut ftp_servers = Vec::<suppaftp::ImplFtpStream<_>>::new();
 
     for server_name in &servers {
-        if let Some(server_creds) = bot_data::get_server_creds(&server_name) {
-            if server_creds.connection != bot_data::ConnectionType::FTP {
-                // TODO: Implement SFTP if needed.
-                panic!("Unknown server connection type");
-            }
+        let server_creds = bot_data::get_server_creds(&server_name).expect("Missing server creds");
 
-            let mut ftp_stream =
-                NativeTlsFtpStream::connect(format!("{}:{}", server_creds.ip, server_creds.port))
-                    .unwrap();
-            ftp_stream
-                .login(&server_creds.user, &server_creds.password)
-                .unwrap();
-            ftp_stream
-                .cwd(format!(
-                    ".config/Epic/FactoryGame/Saved/SaveGames/blueprints/{}",
-                    server_creds.world_name
-                ))
-                .unwrap();
-
-            ftp_servers.push(ftp_stream);
+        if server_creds.connection != bot_data::ConnectionType::FTP {
+            // TODO: Implement SFTP if needed.
+            panic!("Unknown server connection type");
         }
+
+        let mut ftp_stream = NativeTlsFtpStream::connect(server_creds.full_ip).unwrap();
+        ftp_stream
+            .login(&server_creds.user, &server_creds.password)
+            .unwrap();
+        ftp_stream
+            .cwd(format!(
+                ".config/Epic/FactoryGame/Saved/SaveGames/blueprints/{}",
+                server_creds.world_name
+            ))
+            .unwrap();
+
+        ftp_servers.push(ftp_stream);
     }
 
     for file in &files {
@@ -151,3 +197,4 @@ async fn upload_files(files: Vec<commands::upload_blueprints::Attachment>, serve
 // TODO: Logging (tracing crate?)
 // TODO: Remove the unwraps
 // TODO: Limit the size of blueprints folder
+// TODO: Add more display errors for unhappy pathes

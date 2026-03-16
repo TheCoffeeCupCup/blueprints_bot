@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 colored = "3.1.1"
 dotenv = "0.15.0"
+itertools = "0.14.0"
 reqwest = { version = "0.13.2", features = ["stream"] }
 rustls = "0.23.37"
 serde = "1.0.228"
