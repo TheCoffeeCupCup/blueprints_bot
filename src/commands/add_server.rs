@@ -157,13 +157,10 @@ pub async fn process_modal_submition(
             world_name: world_name.to_string(),
         };
 
-        bot_data::BOT_DATA
-            .lock()
-            .unwrap()
-            .servers
-            .insert(server_name.to_string(), bot_data::Server::new(credentials));
-
-        bot_data::save_data();
+        bot_data::update_data(|data| {
+            data.servers
+                .insert(server_name.to_string(), bot_data::Server::new(credentials));
+        });
 
         let response_data = discord::InteractionResponseDataBuilder::new()
             .content(ansi(format!(

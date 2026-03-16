@@ -1,3 +1,6 @@
 /target
+
 .env
+
 bot_data.json
+bot_data_backup.json

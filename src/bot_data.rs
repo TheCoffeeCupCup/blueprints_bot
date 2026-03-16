@@ -1,6 +1,5 @@
 use std::collections::HashSet;
-use std::io::Read;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -22,9 +21,7 @@ pub struct ServerCredentials {
 }
 
 pub fn get_server_creds(server_name: &str) -> Option<ServerCredentials> {
-    BOT_DATA
-        .lock()
-        .unwrap()
+    bot_data::get_data()
         .servers
         .get(server_name)
         .map(|s| s.credentials.clone())
@@ -65,28 +62,72 @@ pub struct BotData {
     pub servers: std::collections::HashMap<String, Server>,
 }
 
-pub static BOT_DATA: LazyLock<Mutex<BotData>> = LazyLock::new(|| Mutex::new(BotData::default()));
+///////////////////////////////////////////////////
 
 const BOT_DATA_FILE: &'static str = "bot_data.json";
+const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.json";
 
-pub fn save_data() {
-    let file = std::fs::File::create(BOT_DATA_FILE).unwrap();
-    let data: &BotData = &BOT_DATA.lock().unwrap();
-    serde_json::to_writer_pretty(file, data).unwrap();
+static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
+    backup_data_file();
+
+    let data = load_data().unwrap_or_default();
+
+    Arc::new(RwLock::new(data))
+});
+
+fn load_data() -> Option<BotData> {
+    let data_json = std::fs::read_to_string(BOT_DATA_FILE)
+        .map_err(|err| println!("Error reading bot data file: {}", err))
+        .ok()?;
+
+    let data = serde_json::from_str(&data_json)
+        .map_err(|err| println!("Error parsing bot data file: {}", err))
+        .ok();
+
+    data
 }
 
-pub fn load_data() {
-    if let Ok(mut file) = std::fs::File::open(BOT_DATA_FILE) {
-        let mut bot_data_json = String::new();
-        std::fs::File::read_to_string(&mut file, &mut bot_data_json).unwrap();
-
-        if let Ok(data) = serde_json::from_str::<BotData>(&bot_data_json) {
-            BOT_DATA.lock().unwrap().servers = data.servers;
-        } else {
-            println!("Error parsing bot data.");
-        }
+fn save_data() {
+    if let Ok(file) = std::fs::File::create(BOT_DATA_FILE)
+        .map_err(|err| println!("Error creating a file for bot data: {}", err))
+    {
+        let data: &BotData = &get_data();
+        serde_json::to_writer_pretty(file, data)
+            .map_err(|err| println!("Error writing bot data to a file: {}", err))
+            .ok();
     }
 }
+
+fn backup_data_file() {
+    let data = std::fs::read_to_string(BOT_DATA_FILE)
+        .map_err(|err| println!("Error reading bot data file: {}", err));
+
+    if let Ok(data) = data {
+        std::fs::write(BACKUP_BOT_DATA_FILE, data)
+            .map_err(|err| println!("Error writing bot data backup: {}", err))
+            .ok();
+    }
+}
+
+pub fn get_data() -> RwLockReadGuard<'static, BotData> {
+    BOT_DATA.read().expect("Failed to lock bot data mutex.")
+}
+
+pub fn update_data<F>(updater: F)
+where
+    F: FnOnce(&mut BotData),
+{
+    if let Ok(mut data) = BOT_DATA
+        .write()
+        .map_err(|err| println!("Error locking bot data for write {}", err))
+    {
+        updater(&mut data);
+    }
+
+    save_data();
+}
+
+///////////////////////////////////////////////////
 
 pub fn create_server_select_menu(
     amount_limit: Option<u8>,
@@ -95,7 +136,7 @@ pub fn create_server_select_menu(
 ) -> discord::component::SelectMenu {
     let mut servers = Vec::new();
 
-    for (server_name, server_data) in &bot_data::BOT_DATA.lock().unwrap().servers {
+    for (server_name, server_data) in &bot_data::get_data().servers {
         if let Some(issuing_user) = issuing_user {
             if !server_data
                 .uploaders

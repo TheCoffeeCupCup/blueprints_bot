@@ -13,8 +13,6 @@ use crate::commands::edit_server_uploaders;
 async fn main() -> Result<(), AnyError> {
     dotenv::dotenv()?;
 
-    bot_data::load_data();
-
     let token = get_env("DISCORD_TOKEN");
     let intents = discord::Intents::GUILD_MESSAGES | discord::Intents::MESSAGE_CONTENT;
 

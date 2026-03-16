@@ -6,11 +6,7 @@ use std::{
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-use crate::{
-    bot_data::{self, BOT_DATA},
-    common::AnyError,
-    discord,
-};
+use crate::{bot_data, common::AnyError, discord};
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
@@ -48,7 +44,7 @@ pub async fn process_command(
     interaction_client: twilight_http::client::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let data = discord::InteractionResponseDataBuilder::new()
-        .content("Someone is messing with something. Please, stand down.")
+        .content("Consume.")
         .build();
 
     let response = discord::InteractionResponse {
@@ -158,13 +154,13 @@ fn create_users_diff(
     let mut added_users_text = String::new();
 
     if !added_users.is_empty() {
-        added_users_text = format!("\nAdded users: {}.", added_users);
+        added_users_text = format!("\nAdded: {}.", added_users);
     }
 
     let mut removed_users_text = String::new();
 
     if !removed_users.is_empty() {
-        removed_users_text = format!("\nRemoved users: {}.", removed_users);
+        removed_users_text = format!("\nRemoved: {}.", removed_users);
     }
 
     (added_users_text, removed_users_text)
@@ -193,23 +189,24 @@ pub async fn process_uploaders_submition(
             ) {
                 let mut response = String::new();
 
-                if let Some(server) = BOT_DATA.lock().unwrap().servers.get_mut(server_name) {
-                    let (added_users, removed_users) =
-                        create_users_diff(&server.uploaders, selected_users);
+                bot_data::update_data(|data| {
+                    if let Some(server) = data.servers.get_mut(server_name) {
+                        let (added_users, removed_users) =
+                            create_users_diff(&server.uploaders, selected_users);
 
-                    response = format!(
-                        "✓ Uploaders list for the server \"{}\" is successfully updated.{}{}",
-                        server_name, added_users, removed_users
-                    );
+                        response = format!(
+                            "✓ Uploaders list for the server \"{}\" is successfully updated.{}{}",
+                            server_name, added_users, removed_users
+                        );
 
-                    server.uploaders = selected_users.clone();
-                }
-
-                bot_data::save_data();
+                        server.uploaders = selected_users.clone();
+                    }
+                });
 
                 interaction_client
                     .update_response(command_interaction_token)
                     .content(Some(&response))
+                    .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
                     .await
                     .unwrap();
             }
@@ -222,16 +219,6 @@ pub async fn process_uploaders_submition(
         .unwrap();
 
     Ok(())
-}
-
-fn get_server(name: &str) -> bot_data::Server {
-    bot_data::BOT_DATA
-        .lock()
-        .unwrap()
-        .servers
-        .get(name)
-        .expect("Selected server not found in the list")
-        .clone()
 }
 
 fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::Component> {
@@ -247,7 +234,11 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
 
     // If there's a selected server then uploaders select menu and submit button will be shown.
     if let Some(server_name) = selected_server {
-        let server = get_server(server_name);
+        let bot_data = &bot_data::get_data();
+        let server = bot_data
+            .servers
+            .get(server_name)
+            .expect("Couldn't find server by name");
 
         let mut current_uploaders = Vec::<discord::component::SelectDefaultValue>::new();
         for uploader in &server.uploaders {
