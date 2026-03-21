@@ -163,7 +163,7 @@ pub async fn process_modal_submition(
             upload_files_text = Some(text.clone());
 
             discord::InteractionResponseDataBuilder::new()
-                .content(ansi(text))
+                .content(ansi(text + "\n\nAwaiting for status update..."))
                 .build()
         }
         Err(text) => discord::InteractionResponseDataBuilder::new()
@@ -187,15 +187,17 @@ pub async fn process_modal_submition(
     if let (Some(upload_files_future), Some(upload_files_text)) =
         (upload_files_future, upload_files_text)
     {
-        if let Err(err) = upload_files_future.await.unwrap() {
-            let errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
+        let mut errors_list = String::new();
 
-            interaction_client
-                .update_response(&interaction.token)
-                .content(Some(&ansi(upload_files_text + &errors_list)))
-                .await
-                .unwrap();
+        if let Err(err) = upload_files_future.await.unwrap() {
+            errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
         }
+
+        interaction_client
+            .update_response(&interaction.token)
+            .content(Some(&ansi(upload_files_text + &errors_list)))
+            .await
+            .unwrap();
     }
 
     Ok(())
