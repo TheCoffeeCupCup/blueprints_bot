@@ -27,9 +27,6 @@ pub mod discord {
     pub use twilight_gateway::Shard;
     pub use twilight_gateway::ShardId;
 
-    pub use twilight_cache_inmemory::DefaultInMemoryCache;
-    pub use twilight_cache_inmemory::ResourceType;
-
     pub use twilight_util::builder::InteractionResponseDataBuilder;
 
     pub use twilight_util::builder::command::CommandBuilder;

@@ -1,6 +1,6 @@
 use colored::Colorize as _;
 
-use crate::{AnyError, ansi, bot_data, discord};
+use crate::{AnyError, ansi, bot_data, discord, ftp};
 
 pub const COMMAND: &'static str = "upload_blueprints";
 pub const MODAL_ID: &'static str = "blueprints_upload_modal";
@@ -151,15 +151,23 @@ pub async fn process_modal_submition(
 
     files.sort_by_cached_key(|f| f.filename.clone());
 
+    let mut upload_files_future: Option<_> = None;
+    let mut upload_files_text: Option<_> = None;
+
     let response_data = match verify_blueprints(&files, selected_servers) {
         Ok(text) => {
-            tokio::spawn(crate::upload_files(files, selected_servers.clone()));
+            upload_files_future = Some(tokio::spawn(ftp::upload_files(
+                files,
+                selected_servers.clone(),
+            )));
+            upload_files_text = Some(text.clone());
+
             discord::InteractionResponseDataBuilder::new()
-                .content(text)
+                .content(ansi(text))
                 .build()
         }
         Err(text) => discord::InteractionResponseDataBuilder::new()
-            .content(text)
+            .content(ansi(text))
             .flags(discord::MessageFlags::EPHEMERAL) // In case of error the response will only be visible to the modal submitter.
             .build(),
     };
@@ -175,6 +183,20 @@ pub async fn process_modal_submition(
         .create_response(interaction.id, &interaction.token, &response)
         .await
         .unwrap();
+
+    if let (Some(upload_files_future), Some(upload_files_text)) =
+        (upload_files_future, upload_files_text)
+    {
+        if let Err(err) = upload_files_future.await.unwrap() {
+            let errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
+
+            interaction_client
+                .update_response(&interaction.token)
+                .content(Some(&ansi(upload_files_text + &errors_list)))
+                .await
+                .unwrap();
+        }
+    }
 
     Ok(())
 }
@@ -276,9 +298,7 @@ fn verify_blueprints(
     );
 
     match has_error {
-        false => Ok(ansi(
-            success_prefix + &response + &category_warning_suffix + &selected_servers,
-        )),
-        true => Err(ansi(error_prefix + &response)),
+        false => Ok(success_prefix + &response + &category_warning_suffix + &selected_servers),
+        true => Err(error_prefix + &response),
     }
 }

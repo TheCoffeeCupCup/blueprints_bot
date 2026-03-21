@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{bot_data, discord};
+use crate::{bot_data, discord, logging};
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
 pub enum ConnectionType {
@@ -76,35 +76,42 @@ static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
 });
 
 fn load_data() -> Option<BotData> {
+    logging::info!("Loading bot data");
+
     let data_json = std::fs::read_to_string(BOT_DATA_FILE)
-        .map_err(|err| println!("Error reading bot data file: {}", err))
+        .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err))
         .ok()?;
 
     let data = serde_json::from_str(&data_json)
-        .map_err(|err| println!("Error parsing bot data file: {}", err))
+        .map_err(|err| logging::warning!("Couldn't parse bot data file: {}", err))
         .ok();
 
     data
 }
 
 fn save_data() {
-    if let Ok(file) = std::fs::File::create(BOT_DATA_FILE)
-        .map_err(|err| println!("Error creating a file for bot data: {}", err))
+    logging::info!("Saving bot data");
+
+    if let Some(file) = std::fs::File::create(BOT_DATA_FILE)
+        .map_err(|err| logging::error!("Couldn't create a file for bot data: {}", err))
+        .ok()
     {
         let data: &BotData = &get_data();
         serde_json::to_writer_pretty(file, data)
-            .map_err(|err| println!("Error writing bot data to a file: {}", err))
+            .map_err(|err| logging::error!("Couldn't write bot data to a file: {}", err))
             .ok();
     }
 }
 
 fn backup_data_file() {
+    logging::info!("Backing up bot data");
+
     let data = std::fs::read_to_string(BOT_DATA_FILE)
-        .map_err(|err| println!("Error reading bot data file: {}", err));
+        .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err));
 
     if let Ok(data) = data {
         std::fs::write(BACKUP_BOT_DATA_FILE, data)
-            .map_err(|err| println!("Error writing bot data backup: {}", err))
+            .map_err(|err| logging::error!("Couldn't write bot data backup: {}", err))
             .ok();
     }
 }
@@ -117,9 +124,10 @@ pub fn update_data<F>(updater: F)
 where
     F: FnOnce(&mut BotData),
 {
-    if let Ok(mut data) = BOT_DATA
+    if let Some(mut data) = BOT_DATA
         .write()
-        .map_err(|err| println!("Error locking bot data for write {}", err))
+        .map_err(|err| logging::error!("Couldn't lock bot data for write {}", err))
+        .ok()
     {
         updater(&mut data);
     }
