@@ -3,10 +3,15 @@ use std::{
     sync::LazyLock,
 };
 
+use colored::Colorize as _;
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-use crate::{bot_data, common::AnyError, discord};
+use crate::{
+    bot_data,
+    common::{AnyError, ansi},
+    discord,
+};
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
@@ -194,10 +199,15 @@ pub async fn process_uploaders_submition(
                         let (added_users, removed_users) =
                             create_users_diff(&server.uploaders, selected_users);
 
-                        response = format!(
-                            "✓ Uploaders list for the server \"{}\" is successfully updated.{}{}",
-                            server_name, added_users, removed_users
+                        let response_title = ansi(
+                            format!(
+                                "✓ Uploaders list for the server \"{server_name}\" is successfully updated."
+                            )
+                            .green()
+                            .to_string(),
                         );
+
+                        response = format!("{response_title}{added_users}{removed_users}");
 
                         server.uploaders = selected_users.clone();
                     }

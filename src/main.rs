@@ -17,7 +17,7 @@ async fn main() -> Result<(), AnyError> {
     log_info!("Initialized file logging");
 
     let token = get_env("DISCORD_TOKEN");
-    let intents = discord::Intents::GUILD_MESSAGES | discord::Intents::MESSAGE_CONTENT;
+    let intents = discord::Intents::GUILD_MESSAGES;
 
     let mut shard = discord::Shard::new(discord::ShardId::ONE, token.clone(), intents);
     let http = std::sync::Arc::new(discord::HttpClient::new(token));
@@ -58,8 +58,7 @@ async fn handle_event(
 ) -> Result<(), AnyError> {
     match event {
         discord::Event::InteractionCreate(interaction) => {
-            logging::info!("Received interaction: {:?}", interaction.kind);
-            handle_interaction_create(&interaction, &http).await;
+            handle_interaction_create(&interaction, &http).await
         }
         _ => {}
     }
@@ -201,4 +200,4 @@ async fn handle_interaction_create(
 // TODO: Limit the size of blueprints folder
 // TODO: Add more display errors for unhappy pathes
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
-// TODO: Removing servers?
+// TODO: Command for removing servers?

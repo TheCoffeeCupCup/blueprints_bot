@@ -114,6 +114,8 @@ pub async fn process_command(
         .build(),
     ];
 
+    logging::info!("Displaying a modal for server adding");
+
     let data = discord::InteractionResponseDataBuilder::new()
         .title("Add a server for blueprint uploading")
         .custom_id(MODAL_ID)
