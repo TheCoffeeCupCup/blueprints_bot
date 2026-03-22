@@ -4,6 +4,7 @@ mod common;
 mod ftp;
 mod logging;
 
+use itertools::Itertools as _;
 use twilight_gateway::StreamExt as _;
 
 use common::{AnyError, ansi, discord, get_env};
@@ -66,24 +67,59 @@ async fn handle_event(
     Ok(())
 }
 
+fn get_author_names(interaction: &discord::InteractionCreate) -> Vec<&str> {
+    let mut names = Vec::new();
+
+    if let Some(member) = interaction.member.as_ref() {
+        if let Some(nick) = member.nick.as_ref() {
+            names.push(nick.as_str());
+        }
+
+        if let Some(user) = member.user.as_ref() {
+            if let Some(global_name) = user.global_name.as_ref() {
+                names.push(global_name.as_str());
+            }
+
+            names.push(user.name.as_str());
+        }
+    }
+
+    names
+}
+
 async fn handle_interaction_create(
     interaction: &discord::InteractionCreate,
     http: &discord::HttpClient,
 ) {
     let interaction_client = http.interaction(interaction.application_id);
 
+    let author_names = get_author_names(interaction);
+
+    let author_names = if author_names.is_empty() {
+        "unknown".to_string()
+    } else {
+        author_names
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .join(" aka ")
+    };
+
+    logging::info!("Received interaction from {author_names}");
+
     match &interaction.data {
         Some(discord::InteractionData::ApplicationCommand(command)) => {
-            match command.name.as_str() {
+            let command_name = command.name.as_str();
+
+            logging::info!("Received application command \"{command_name}\"");
+
+            match command_name {
                 commands::upload_blueprints::COMMAND => {
                     commands::upload_blueprints::process_command(&interaction, interaction_client)
                         .await
                         .unwrap();
                 }
                 commands::add_server::COMMAND => {
-                    commands::add_server::process_command(&interaction, interaction_client)
-                        .await
-                        .unwrap();
+                    commands::add_server::process_command(&interaction, interaction_client).await;
                 }
                 commands::edit_server_uploaders::COMMAND => {
                     commands::edit_server_uploaders::process_command(
@@ -98,7 +134,11 @@ async fn handle_interaction_create(
         }
 
         Some(discord::InteractionData::ModalSubmit(submit_data)) => {
-            match submit_data.custom_id.as_str() {
+            let modal_id = submit_data.custom_id.as_str();
+
+            logging::info!("Received modal submition \"{modal_id}\"");
+
+            match modal_id {
                 commands::upload_blueprints::MODAL_ID => {
                     commands::upload_blueprints::process_modal_submition(
                         &interaction,
@@ -114,15 +154,18 @@ async fn handle_interaction_create(
                         submit_data,
                         interaction_client,
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 }
                 _ => {}
             }
         }
 
         Some(discord::InteractionData::MessageComponent(message_component)) => {
-            match message_component.custom_id.as_str() {
+            let component_id = message_component.custom_id.as_str();
+
+            logging::info!("Received message component interaction \"{component_id}\"");
+
+            match component_id {
                 "server_select" => commands::edit_server_uploaders::process_server_select(
                     interaction,
                     message_component,
@@ -149,9 +192,13 @@ async fn handle_interaction_create(
             }
         }
 
-        _ => {}
+        _ => {
+            logging::info!("Received unhandled interaction {:?}", interaction.kind);
+        }
     }
 }
 
 // TODO: Limit the size of blueprints folder
 // TODO: Add more display errors for unhappy pathes
+// TODO: Command for editing uploader's servers (as opposed to server's uploaders)
+// TODO: Removing servers?

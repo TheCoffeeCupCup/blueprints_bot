@@ -1,7 +1,8 @@
 use colored::Colorize as _;
 use twilight_model::guild::Permissions;
 
-use crate::{AnyError, bot_data, common::ansi, discord};
+use crate::common::{OptionExt as _, ansi};
+use crate::{bot_data, discord, logging};
 
 pub const COMMAND: &'static str = "add_server";
 pub const MODAL_ID: &'static str = "add_server_modal";
@@ -14,6 +15,23 @@ pub fn create_command() -> twilight_model::application::command::Command {
     )
     .default_member_permissions(Permissions::ADMINISTRATOR)
     .build()
+}
+
+fn check_if_authorized(interaction: &discord::InteractionCreate) -> bool {
+    let permissions = interaction
+        .member
+        .as_ref()
+        .inspect_none(|| logging::error!("Couldn't get member for authorization check"))
+        .and_then(|a| {
+            a.permissions.as_ref().inspect_none(|| {
+                logging::error!("Couldn't get member's permissions for authorization check")
+            })
+        });
+
+    match permissions {
+        Some(permissions) => permissions.contains(Permissions::ADMINISTRATOR),
+        None => false,
+    }
 }
 
 async fn respond_to_unauthorized(
@@ -37,24 +55,23 @@ async fn respond_to_unauthorized(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!(
+                "Failed answering to unauthorized user for server adding command: {err}"
+            );
+        })
+        .ok();
 }
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: twilight_http::client::InteractionClient<'_>,
-) -> Result<(), AnyError> {
-    if !interaction
-        .member
-        .as_ref()
-        .unwrap()
-        .permissions
-        .unwrap()
-        .contains(Permissions::ADMINISTRATOR)
-    {
-        respond_to_unauthorized(interaction, interaction_client).await;
+) {
+    logging::info!("Processing add_server command");
 
-        return Ok(());
+    if !check_if_authorized(interaction) {
+        respond_to_unauthorized(interaction, interaction_client).await;
+        return;
     }
 
     let components = [
@@ -69,7 +86,7 @@ pub async fn process_command(
             custom_id: "full_ip",
             label: "Full IP address",
             description: Some("IP and FTP port must be combined with a colon (:)."),
-            placeholder: Some("123.45.67.89:21"),
+            placeholder: Some("192.168.0.1:21"),
         }
         .build(),
         discord::TextInputBuilder {
@@ -112,76 +129,155 @@ pub async fn process_command(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't respond to add_server command: {err}");
+        })
+        .ok();
 
-    Ok(())
+    logging::info!("Finish processing add_server command");
+}
+
+struct ServerCredentialsModalData<'a> {
+    pub server_name: Option<&'a str>,
+    pub full_ip: Option<&'a str>,
+    pub ftp_username: Option<&'a str>,
+    pub ftp_password: Option<&'a str>,
+    pub world_name: Option<&'a str>,
+
+    pub components_data: &'a Vec<discord::ModalInteractionComponent>,
+}
+
+fn push_if_none<T, OptionT>(values: &mut Vec<T>, option: &Option<OptionT>, none_value: T) {
+    if option.is_none() {
+        values.push(none_value);
+    };
+}
+
+fn verify_ip(ip: &str) -> bool {
+    use std::sync::LazyLock;
+
+    static REGEX: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$").unwrap());
+
+    REGEX.is_match(ip)
+}
+
+impl<'a> ServerCredentialsModalData<'a> {
+    pub fn from_modal_submit_data(modal_submit_data: &'a discord::ModalInteractionData) -> Self {
+        let mut result = Self {
+            server_name: None,
+            full_ip: None,
+            ftp_username: None,
+            ftp_password: None,
+            world_name: None,
+
+            components_data: &modal_submit_data.components,
+        };
+
+        for component in &modal_submit_data.components {
+            if let discord::ModalInteractionComponent::Label(label) = component {
+                if let discord::ModalInteractionComponent::TextInput(text_input) =
+                    label.component.as_ref()
+                {
+                    match text_input.custom_id.as_str() {
+                        "server_name" => result.server_name = Some(&text_input.value),
+                        "full_ip" => result.full_ip = Some(&text_input.value.trim()),
+                        "ftp_username" => result.ftp_username = Some(&text_input.value),
+                        "ftp_password" => result.ftp_password = Some(&text_input.value),
+                        "world_name" => result.world_name = Some(&text_input.value),
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    pub fn to_server_creds(&self) -> Result<(String, bot_data::ServerCredentials), String> {
+        let mut missing_list = Vec::new();
+
+        push_if_none(&mut missing_list, &self.server_name, "server_name");
+        push_if_none(&mut missing_list, &self.full_ip, "full_ip");
+        push_if_none(&mut missing_list, &self.ftp_username, "ftp_username");
+        push_if_none(&mut missing_list, &self.ftp_password, "ftp_password");
+        push_if_none(&mut missing_list, &self.world_name, "world_name");
+
+        if missing_list.is_empty() {
+            let full_ip = self.full_ip.unwrap();
+
+            if !verify_ip(full_ip) {
+                logging::warning!("IP \"{full_ip}\" failed regex check");
+
+                return Err(format!(
+                    "✗ IP address \"{full_ip}\" has wrong format. It should look similar to this: \"192.168.0.1:21\"."
+                ));
+            }
+
+            let server_creds = bot_data::ServerCredentials {
+                connection: bot_data::ConnectionType::FTP,
+                full_ip: full_ip.to_string(),
+                user: self.ftp_username.unwrap().to_string(),
+                password: self.ftp_password.unwrap().to_string(),
+                world_name: self.world_name.unwrap().to_string(),
+            };
+
+            return Ok((self.server_name.unwrap().to_string(), server_creds));
+        } else {
+            logging::error!(
+                "Couldn't extract add_server data from the modal submission. Missing: {}. Components data: {:?}",
+                missing_list.join(", "),
+                self.components_data
+            );
+            return Err("✗ Submitted modal misses necessary data.".to_string());
+        }
+    }
 }
 
 pub async fn process_modal_submition(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: twilight_http::client::InteractionClient<'_>,
-) -> Result<(), AnyError> {
-    let mut server_name: Option<&str> = None;
+) {
+    logging::info!("Server adding modal submitted");
 
-    let mut full_ip: Option<&str> = None;
-    let mut ftp_username: Option<&str> = None;
-    let mut ftp_password: Option<&str> = None;
-    let mut world_name: Option<&str> = None;
+    let server_modal_data = ServerCredentialsModalData::from_modal_submit_data(submit_data);
 
-    for component in &submit_data.components {
-        if let discord::ModalInteractionComponent::Label(label) = component {
-            if let discord::ModalInteractionComponent::TextInput(text_input) =
-                label.component.as_ref()
-            {
-                match text_input.custom_id.as_str() {
-                    "server_name" => server_name = Some(&text_input.value),
-                    "full_ip" => full_ip = Some(&text_input.value),
-                    "ftp_username" => ftp_username = Some(&text_input.value),
-                    "ftp_password" => ftp_password = Some(&text_input.value),
-                    "world_name" => world_name = Some(&text_input.value),
-                    _ => {}
-                }
-            }
+    let response_data = match server_modal_data.to_server_creds() {
+        Ok((server_name, server_creds)) => {
+            logging::info!("Adding server \"{server_name}\"");
+
+            bot_data::update_data(|data| {
+                data.servers
+                    .insert(server_name.to_string(), bot_data::Server::new(server_creds));
+            });
+
+            discord::InteractionResponseDataBuilder::new()
+                .content(ansi(
+                    format!("✓ Server \"{}\" is successfully added.", server_name)
+                        .green()
+                        .to_string(),
+                ))
+                .build()
         }
-    }
+        Err(err) => discord::InteractionResponseDataBuilder::new()
+            .content(ansi(err.red().to_string()))
+            .flags(discord::MessageFlags::EPHEMERAL)
+            .build(),
+    };
 
-    let data = (server_name, full_ip, ftp_password, ftp_username, world_name);
+    let response = discord::InteractionResponse {
+        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        data: Some(response_data),
+    };
 
-    if let (Some(server_name), Some(full_ip), Some(password), Some(user), Some(world_name)) = data {
-        let credentials = bot_data::ServerCredentials {
-            connection: bot_data::ConnectionType::FTP,
-            full_ip: full_ip.to_string(),
-            password: password.to_string(),
-            user: user.to_string(),
-            world_name: world_name.to_string(),
-        };
+    interaction_client
+        .create_response(interaction.id, &interaction.token, &response)
+        .await
+        .map_err(|err| {
+            logging::error!("Couldnt't send response to add_server modal submission: {err}");
+        })
+        .ok();
 
-        bot_data::update_data(|data| {
-            data.servers
-                .insert(server_name.to_string(), bot_data::Server::new(credentials));
-        });
-
-        let response_data = discord::InteractionResponseDataBuilder::new()
-            .content(ansi(format!(
-                "{}",
-                format!("✓ Server \"{}\" is successfully added.", server_name).green()
-            )))
-            .build();
-
-        let response = discord::InteractionResponse {
-            kind:
-                twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
-            data: Some(response_data),
-        };
-
-        interaction_client
-            .create_response(interaction.id, &interaction.token, &response)
-            .await
-            .unwrap();
-    } else {
-        panic!("add_server misses data from modal submission: {:?}", data)
-    }
-
-    Ok(())
+    logging::info!("Responded to a server adding modal");
 }

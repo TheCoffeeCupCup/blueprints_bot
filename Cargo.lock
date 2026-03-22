@@ -134,6 +134,7 @@ dependencies = [
  "colored",
  "dotenv",
  "itertools",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

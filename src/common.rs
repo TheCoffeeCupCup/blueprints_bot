@@ -87,3 +87,16 @@ pub fn get_env(var: &'static str) -> String {
 pub fn ansi(formatted: String) -> String {
     format!("```ansi\n{}\n```", formatted)
 }
+
+pub trait OptionExt {
+    fn inspect_none<F: FnOnce()>(self, f: F) -> Self;
+}
+
+impl<T> OptionExt for Option<T> {
+    fn inspect_none<F: FnOnce()>(self, f: F) -> Self {
+        if self.is_none() {
+            f();
+        }
+        self
+    }
+}
