@@ -15,12 +15,13 @@ use crate::{
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
-pub fn create_command() -> twilight_model::application::command::Command {
+pub fn create_command() -> discord::Command {
     discord::CommandBuilder::new(
         COMMAND,
         "Modify one of the servers available for blueprints uploading",
-        twilight_model::application::command::CommandType::ChatInput,
+        discord::CommandType::ChatInput,
     )
+    .default_member_permissions(discord::Permissions::ADMINISTRATOR)
     .build()
 }
 
@@ -46,14 +47,14 @@ static ACTIVE_FORMS: LazyLock<
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let data = discord::InteractionResponseDataBuilder::new()
-        .content("Consume.")
+        .content("Waiting for settings submition...")
         .build();
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        kind: discord::InteractionResponseType::ChannelMessageWithSource,
         data: Some(data),
     };
 
@@ -80,7 +81,7 @@ pub async fn process_command(
 pub async fn process_server_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let mut server_name: Option<&str> = None;
 
@@ -102,7 +103,7 @@ pub async fn process_server_select(
         .build();
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::UpdateMessage,
+        kind: discord::InteractionResponseType::UpdateMessage,
         data: Some(data),
     };
 
@@ -117,10 +118,10 @@ pub async fn process_server_select(
 pub async fn process_users_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::DeferredUpdateMessage,
+        kind: discord::InteractionResponseType::DeferredUpdateMessage,
         data: None,
     };
 
@@ -173,10 +174,10 @@ fn create_users_diff(
 
 pub async fn process_uploaders_submition(
     interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::DeferredUpdateMessage,
+        kind: discord::InteractionResponseType::DeferredUpdateMessage,
         data: None,
     };
 
@@ -281,12 +282,10 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
         components.push(discord::Component::ActionRow(
             discord::ActionRowBuilder::new()
                 .component(
-                    discord::ButtonBuilder::new(
-                        twilight_model::channel::message::component::ButtonStyle::Success,
-                    )
-                    .custom_id("confirm_edit_uploaders")
-                    .label("Save")
-                    .build(),
+                    discord::ButtonBuilder::new(discord::component::ButtonStyle::Success)
+                        .custom_id("confirm_edit_uploaders")
+                        .label("Save")
+                        .build(),
                 )
                 .build(),
         ));

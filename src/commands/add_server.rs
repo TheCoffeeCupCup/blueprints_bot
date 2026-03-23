@@ -1,78 +1,26 @@
 use colored::Colorize as _;
-use twilight_model::guild::Permissions;
 
-use crate::common::{OptionExt as _, ansi};
+use crate::common::ansi;
 use crate::{bot_data, discord, logging};
 
 pub const COMMAND: &'static str = "add_server";
 pub const MODAL_ID: &'static str = "add_server_modal";
 
-pub fn create_command() -> twilight_model::application::command::Command {
+pub fn create_command() -> discord::Command {
     discord::CommandBuilder::new(
         COMMAND,
         "Adds a new server for blueprints uploading",
-        twilight_model::application::command::CommandType::ChatInput,
+        discord::CommandType::ChatInput,
     )
-    .default_member_permissions(Permissions::ADMINISTRATOR)
+    .default_member_permissions(discord::Permissions::ADMINISTRATOR)
     .build()
-}
-
-fn check_if_authorized(interaction: &discord::InteractionCreate) -> bool {
-    let permissions = interaction
-        .member
-        .as_ref()
-        .inspect_none(|| logging::error!("Couldn't get member for authorization check"))
-        .and_then(|a| {
-            a.permissions.as_ref().inspect_none(|| {
-                logging::error!("Couldn't get member's permissions for authorization check")
-            })
-        });
-
-    match permissions {
-        Some(permissions) => permissions.contains(Permissions::ADMINISTRATOR),
-        None => false,
-    }
-}
-
-async fn respond_to_unauthorized(
-    interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
-) {
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content(ansi(
-            "✗ Only members with administrator-allowed role are allowed to use this command."
-                .red()
-                .to_string(),
-        ))
-        .flags(discord::MessageFlags::EPHEMERAL)
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .map_err(|err| {
-            logging::error!(
-                "Failed answering to unauthorized user for server adding command: {err}"
-            );
-        })
-        .ok();
 }
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) {
     logging::info!("Processing add_server command");
-
-    if !check_if_authorized(interaction) {
-        respond_to_unauthorized(interaction, interaction_client).await;
-        return;
-    }
 
     let components = [
         discord::TextInputBuilder {
@@ -124,7 +72,7 @@ pub async fn process_command(
         .build();
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::Modal,
+        kind: discord::InteractionResponseType::Modal,
         data: Some(data),
     };
 
@@ -239,7 +187,7 @@ impl<'a> ServerCredentialsModalData<'a> {
 pub async fn process_modal_submition(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) {
     logging::info!("Server adding modal submitted");
 
@@ -269,7 +217,7 @@ pub async fn process_modal_submition(
     };
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        kind: discord::InteractionResponseType::ChannelMessageWithSource,
         data: Some(response_data),
     };
 

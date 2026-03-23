@@ -29,8 +29,8 @@ pub fn get_server_creds(server_name: &str) -> Option<ServerCredentials> {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum Mentionable {
-    User(twilight_model::id::Id<discord::marker::UserMarker>),
-    Role(twilight_model::id::Id<discord::marker::RoleMarker>),
+    User(discord::Id<discord::marker::UserMarker>),
+    Role(discord::Id<discord::marker::RoleMarker>),
 }
 
 impl Mentionable {
@@ -183,12 +183,10 @@ pub fn create_server_select_menu(
         servers.push(select_menu);
     }
 
-    let mut select_menu = discord::SelectMenuBuilder::new(
-        "server_select",
-        twilight_model::channel::message::component::SelectMenuType::Text,
-    )
-    .min_values(1)
-    .required(true);
+    let mut select_menu =
+        discord::SelectMenuBuilder::new("server_select", discord::component::SelectMenuType::Text)
+            .min_values(1)
+            .required(true);
 
     if let Some(limit) = amount_limit {
         select_menu = select_menu.max_values(limit);

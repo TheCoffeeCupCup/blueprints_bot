@@ -24,18 +24,18 @@ pub struct Attachment {
     pub url: String,
 }
 
-pub fn create_command() -> twilight_model::application::command::Command {
+pub fn create_command() -> discord::Command {
     discord::CommandBuilder::new(
         COMMAND,
         "Upload blueprint files to a server",
-        twilight_model::application::command::CommandType::ChatInput,
+        discord::CommandType::ChatInput,
     )
     .build()
 }
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let select_menu =
         bot_data::create_server_select_menu(None, None, Some(interaction.member.as_ref().unwrap()));
@@ -79,7 +79,7 @@ pub async fn process_command(
         .build();
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::Modal,
+        kind: discord::InteractionResponseType::Modal,
         data: Some(data),
     };
 
@@ -93,11 +93,11 @@ pub async fn process_command(
 
 async fn respond_to_not_uploader(
     interaction: &discord::InteractionCreate,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) {
     let data = discord::InteractionResponseDataBuilder::new()
         .content(ansi(
-            "✗ You don't have access to blueprint uploading for any server. If you think this is a mistake, ask IT people for permission."
+            "✗ You don't have access to blueprint uploading for any server. If you think this is a mistake, ask netrunners for permission."
                 .red()
                 .to_string(),
         ))
@@ -105,7 +105,7 @@ async fn respond_to_not_uploader(
         .build();
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        kind: discord::InteractionResponseType::ChannelMessageWithSource,
         data: Some(data),
     };
 
@@ -134,7 +134,7 @@ fn get_selected_servers(
 pub async fn process_modal_submition(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: twilight_http::client::InteractionClient<'_>,
+    interaction_client: discord::InteractionClient<'_>,
 ) -> Result<(), AnyError> {
     let mut files = Vec::<Attachment>::new();
 
@@ -175,7 +175,7 @@ pub async fn process_modal_submition(
     // TODO: add status report (uploading, uploaded, error).
 
     let response = discord::InteractionResponse {
-        kind: twilight_model::http::interaction::InteractionResponseType::ChannelMessageWithSource,
+        kind: discord::InteractionResponseType::ChannelMessageWithSource,
         data: Some(response_data),
     };
 
@@ -288,7 +288,7 @@ fn verify_blueprints(
         .green()
         .to_string();
 
-    let category_warning_suffix = "\n\n⚠ The blueprints will appear in the \"Unknown\" category after server is restarted. Please move them when you log into the server to keep things organized.".yellow().to_string();
+    let category_warning_suffix = "\n\n⚠ The blueprints will appear in the \"Unknown\" category when the servers are reloaded. Please move them when you log into the server to keep things organized.".yellow().to_string();
 
     let selected_servers = format!(
         "\n\nSelected servers: {}.",

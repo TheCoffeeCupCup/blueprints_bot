@@ -1,5 +1,6 @@
 pub mod discord {
     pub use twilight_http::Client as HttpClient;
+    pub use twilight_http::client::InteractionClient;
 
     pub use twilight_model::channel::message::Component;
     pub use twilight_model::channel::message::MessageFlags;
@@ -8,6 +9,10 @@ pub mod discord {
     pub use twilight_model::gateway::payload::incoming::InteractionCreate;
 
     pub use twilight_model::http::interaction::InteractionResponse;
+    pub use twilight_model::http::interaction::InteractionResponseType;
+
+    pub use twilight_model::application::command::Command;
+    pub use twilight_model::application::command::CommandType;
 
     pub use twilight_model::application::interaction::InteractionData;
 
@@ -20,6 +25,7 @@ pub mod discord {
     pub use twilight_model::id::marker;
 
     pub use twilight_model::guild::PartialMember;
+    pub use twilight_model::guild::Permissions;
 
     pub use twilight_gateway::Event;
     pub use twilight_gateway::EventTypeFlags;
@@ -86,17 +92,4 @@ pub fn get_env(var: &'static str) -> String {
 
 pub fn ansi(formatted: String) -> String {
     format!("```ansi\n{}\n```", formatted)
-}
-
-pub trait OptionExt {
-    fn inspect_none<F: FnOnce()>(self, f: F) -> Self;
-}
-
-impl<T> OptionExt for Option<T> {
-    fn inspect_none<F: FnOnce()>(self, f: F) -> Self {
-        if self.is_none() {
-            f();
-        }
-        self
-    }
 }
