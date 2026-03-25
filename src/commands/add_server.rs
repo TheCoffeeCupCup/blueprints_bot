@@ -9,7 +9,7 @@ pub const MODAL_ID: &'static str = "add_server_modal";
 pub fn create_command() -> discord::Command {
     discord::CommandBuilder::new(
         COMMAND,
-        "Adds a new server for blueprints uploading",
+        "Add a new server for blueprints uploading",
         discord::CommandType::ChatInput,
     )
     .default_member_permissions(discord::Permissions::ADMINISTRATOR)

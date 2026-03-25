@@ -18,7 +18,7 @@ pub const COMMAND: &'static str = "edit_server_uploaders";
 pub fn create_command() -> discord::Command {
     discord::CommandBuilder::new(
         COMMAND,
-        "Modify one of the servers available for blueprints uploading",
+        "Modify the list of uploaders for one of the available servers",
         discord::CommandType::ChatInput,
     )
     .default_member_permissions(discord::Permissions::ADMINISTRATOR)

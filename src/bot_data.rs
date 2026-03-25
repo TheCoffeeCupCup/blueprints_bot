@@ -188,16 +188,15 @@ pub fn create_server_select_menu(
             .min_values(1)
             .required(true);
 
-    if let Some(limit) = amount_limit {
-        select_menu = select_menu.max_values(limit);
-    }
-
     let servers_amount = servers.len();
     for server in servers {
         select_menu = select_menu.option(server);
     }
 
-    select_menu
-        .max_values(servers_amount.try_into().unwrap())
-        .build()
+    select_menu = match amount_limit {
+        Some(limit) => select_menu.max_values(limit),
+        None => select_menu.max_values(servers_amount.try_into().unwrap()),
+    };
+
+    select_menu.build()
 }

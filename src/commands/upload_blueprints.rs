@@ -172,7 +172,7 @@ pub async fn process_modal_submition(
             .build(),
     };
 
-    // TODO: add status report (uploading, uploaded, error).
+    // TODO: add real-time status report for each file (uploading, uploaded, error).
 
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::ChannelMessageWithSource,
