@@ -8,9 +8,9 @@ use itertools::Itertools;
 use tokio::sync::Mutex;
 
 use crate::{
-    bot_data,
+    bot_data, commands,
     common::{AnyError, ansi},
-    discord,
+    discord, logging,
 };
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
@@ -48,7 +48,21 @@ static ACTIVE_FORMS: LazyLock<
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
+    let servers_amount = bot_data::get_data().servers.len();
+
+    if servers_amount == 0 {
+        logging::info!("Edit server uploaders command issued while amount of servers is 0");
+
+        let error = format!(
+            "✗ No servers have been set up yet. It can be done via the `/{}` command.",
+            commands::add_server::COMMAND
+        );
+        discord::negative_response(interaction, interaction_client, &error).await;
+
+        return;
+    }
+
     let data = discord::InteractionResponseDataBuilder::new()
         .content("Waiting for settings submition...")
         .build();
@@ -61,21 +75,37 @@ pub async fn process_command(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!(
+                "Couldn't send \"Waiting for submission\" message for edit server uploaders: {err}"
+            );
+        })
+        .ok();
 
-    let followup = interaction_client
+    let followup_result = interaction_client
         .create_followup(&interaction.token)
         .components(construct_message_components(None).as_slice())
         .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-        .await
-        .unwrap();
+        .await;
 
-    ACTIVE_FORMS.lock().await.insert(
-        followup.model().await.unwrap().id,
-        MessageFormData::new(interaction.token.clone()),
-    );
+    match followup_result {
+        Ok(response) => match response.model().await.map(|followup| followup.id) {
+            Ok(followup_id) => {
+                ACTIVE_FORMS
+                    .lock()
+                    .await
+                    .insert(followup_id, MessageFormData::new(interaction.token.clone()));
+            }
+            Err(err) => {
+                logging::error!("Couldn't retrieve followup id: {err}");
+            }
+        },
+        Err(err) => {
+            logging::error!("Couldn't send edit server uploaders followup: {err}");
+        }
+    }
 
-    Ok(())
+    logging::info!("Responded to edit server uploaders command");
 }
 
 pub async fn process_server_select(
@@ -89,18 +119,44 @@ pub async fn process_server_select(
         server_name = Some(&selected_server_name);
     }
 
-    let server_name = server_name.expect("Couldn't retrieve selected server name.");
+    let data = match server_name {
+        Some(server_name) => {
+            if let Some(interaction_message) = &interaction.message {
+                logging::info!("Updating server name form data for edit server uploaders.");
 
-    if let Some(interaction_message) = &interaction.message {
-        if let Some(form_data) = ACTIVE_FORMS.lock().await.get_mut(&interaction_message.id) {
-            form_data.server_name = Some(server_name.to_string());
+                if let Some(form_data) = ACTIVE_FORMS.lock().await.get_mut(&interaction_message.id)
+                {
+                    form_data.server_name = Some(server_name.to_string());
+                }
+            }
+
+            let components = construct_message_components(Some(server_name));
+
+            discord::InteractionResponseDataBuilder::new()
+                .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
+                .components(components)
+                .build()
         }
-    }
+        None => {
+            logging::error!("Couldn't retrieve selected server name.");
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-        .components(construct_message_components(Some(server_name)))
-        .build();
+            let mut components = construct_message_components(None);
+
+            components.push(discord::Component::TextDisplay(
+                discord::TextDisplayBuilder::new(ansi(
+                    "⚠ Something went wrong. Please try again."
+                        .red()
+                        .to_string(),
+                ))
+                .build(),
+            ));
+
+            discord::InteractionResponseDataBuilder::new()
+                .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
+                .components(components)
+                .build()
+        }
+    };
 
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::UpdateMessage,
@@ -110,7 +166,10 @@ pub async fn process_server_select(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't update edit server uploaders message: {err}");
+        })
+        .ok();
 
     Ok(())
 }
@@ -126,10 +185,17 @@ pub async fn process_users_select(
     };
 
     if let Some(interaction_message) = &interaction.message {
-        if let Some(form_data) = ACTIVE_FORMS.lock().await.get_mut(&interaction_message.id) {
+        let mut form_data = ACTIVE_FORMS.lock().await;
+
+        logging::info!("Updating uploaders form data for edit server uploaders.");
+
+        let selected_users = form_data.get_mut(&interaction_message.id).map(|form_data| {
             let selected_users = form_data.selected_users.get_or_insert_default();
             selected_users.clear();
+            selected_users
+        });
 
+        if let Some(selected_users) = selected_users {
             if let Some(selected_mentionables) = interaction_data.resolved.as_ref() {
                 for (user_id, _user) in &selected_mentionables.users {
                     selected_users.insert(bot_data::Mentionable::User(*user_id));
@@ -145,7 +211,10 @@ pub async fn process_users_select(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't defer update for edit server uploaders message: {err}");
+        })
+        .ok();
 
     Ok(())
 }
@@ -184,7 +253,10 @@ pub async fn process_uploaders_submition(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't defer update for edit server uploaders message: {err}");
+        })
+        .ok();
 
     if let Some(interaction_message) = &interaction.message {
         if let Some(form_data) = ACTIVE_FORMS.lock().await.get(&interaction_message.id) {
@@ -197,8 +269,13 @@ pub async fn process_uploaders_submition(
 
                 bot_data::update_data(|data| {
                     if let Some(server) = data.servers.get_mut(server_name) {
+                        logging::info!("Updating server uploaders for server \"{server_name}\"");
+
                         let (added_users, removed_users) =
                             create_users_diff(&server.uploaders, selected_users);
+
+                        logging::info!("{added_users}");
+                        logging::info!("{removed_users}");
 
                         let response_title = ansi(
                             format!(
@@ -219,7 +296,12 @@ pub async fn process_uploaders_submition(
                     .content(Some(&response))
                     .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
                     .await
-                    .unwrap();
+                    .map_err(|err| {
+                        logging::error!(
+                            "Couldn't update edit server uploaders status message: {err}"
+                        );
+                    })
+                    .ok();
             }
         }
     }
@@ -227,7 +309,10 @@ pub async fn process_uploaders_submition(
     interaction_client
         .delete_response(&interaction.token)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't delete edit server uploaders message: {err}");
+        })
+        .ok();
 
     Ok(())
 }

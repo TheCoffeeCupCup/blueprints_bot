@@ -23,14 +23,14 @@ async fn main() -> Result<(), AnyError> {
     let http = std::sync::Arc::new(discord::HttpClient::new(token));
 
     let application_id = http.current_user_application().await?.model().await?.id;
-    let test_guild_id = discord::Id::new(get_env("TEST_GUILD_ID").parse()?);
+    let target_guild_id = discord::Id::new(get_env("GUILD_ID").parse()?);
 
     let interaction_client = http.interaction(application_id);
 
     log_info!("Setting guild commands");
     interaction_client
         .set_guild_commands(
-            test_guild_id,
+            target_guild_id,
             &[
                 commands::upload_blueprints::create_command(),
                 commands::add_server::create_command(),
@@ -43,7 +43,11 @@ async fn main() -> Result<(), AnyError> {
     while let Some(item) = shard.next_event(discord::EventTypeFlags::all()).await {
         match item {
             Ok(event) => {
-                tokio::spawn(handle_event(event, std::sync::Arc::clone(&http)));
+                tokio::spawn(handle_event(
+                    event,
+                    std::sync::Arc::clone(&http),
+                    target_guild_id,
+                ));
             }
             Err(err) => logging::error!("Error receiving event: {}", err),
         }
@@ -55,15 +59,24 @@ async fn main() -> Result<(), AnyError> {
 async fn handle_event(
     event: discord::Event,
     http: std::sync::Arc<discord::HttpClient>,
-) -> Result<(), AnyError> {
-    match event {
-        discord::Event::InteractionCreate(interaction) => {
-            handle_interaction_create(&interaction, &http).await
-        }
-        _ => {}
+    target_guild_id: discord::Id<discord::marker::GuildMarker>,
+) {
+    // If event type is undesired we ignore it without logging any warnings.
+    let discord::Event::InteractionCreate(interaction) = &event else {
+        return;
+    };
+
+    let Some(guild_id) = event.guild_id() else {
+        logging::error!("Event rejected: couldn't check event's guild ID");
+        return;
+    };
+
+    if guild_id != target_guild_id {
+        logging::warning!("Event rejected: guild id `{guild_id}` doesn't correspond to the target");
+        return;
     }
 
-    Ok(())
+    handle_interaction_create(&interaction, &http).await
 }
 
 fn get_author_names(interaction: &discord::InteractionCreate) -> Vec<&str> {
@@ -114,8 +127,7 @@ async fn handle_interaction_create(
             match command_name {
                 commands::upload_blueprints::COMMAND => {
                     commands::upload_blueprints::process_command(&interaction, interaction_client)
-                        .await
-                        .unwrap();
+                        .await;
                 }
                 commands::add_server::COMMAND => {
                     commands::add_server::process_command(&interaction, interaction_client).await;
@@ -125,8 +137,7 @@ async fn handle_interaction_create(
                         &interaction,
                         interaction_client,
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 }
                 _ => {}
             }

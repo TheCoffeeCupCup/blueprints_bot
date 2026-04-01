@@ -1,6 +1,6 @@
 use colored::Colorize as _;
 
-use crate::{AnyError, ansi, bot_data, discord, ftp};
+use crate::{AnyError, ansi, bot_data, commands, discord, ftp, logging};
 
 pub const COMMAND: &'static str = "upload_blueprints";
 pub const MODAL_ID: &'static str = "blueprints_upload_modal";
@@ -36,13 +36,34 @@ pub fn create_command() -> discord::Command {
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
     let select_menu =
         bot_data::create_server_select_menu(None, None, Some(interaction.member.as_ref().unwrap()));
 
+    let servers_amount = bot_data::get_data().servers.len();
+
+    if servers_amount == 0 {
+        logging::info!("Upload blueprints command issued while amount of servers is 0");
+
+        let error = format!(
+            "✗ No servers have been set up yet. Ask netrunners to add your server or use `/{}` if you are one.",
+            commands::add_server::COMMAND
+        );
+        discord::negative_response(interaction, interaction_client, &error).await;
+
+        return;
+    }
+
     if select_menu.options.iter().len() == 0 {
-        respond_to_not_uploader(interaction, interaction_client).await;
-        return Ok(());
+        logging::info!("Non-uploader issued the upload blueprints command");
+
+        let error = format!(
+            "✗ You don't have access to blueprint uploading for any server. Ask netrunners for permission or use `/{}` if you are one.",
+            commands::edit_server_uploaders::COMMAND
+        );
+        discord::negative_response(interaction, interaction_client, &error).await;
+
+        return;
     }
 
     let server_select_label = discord::Component::Label(
@@ -80,32 +101,6 @@ pub async fn process_command(
 
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::Modal,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .unwrap();
-
-    Ok(())
-}
-
-async fn respond_to_not_uploader(
-    interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
-) {
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content(ansi(
-            "✗ You don't have access to blueprint uploading for any server. If you think this is a mistake, ask netrunners for permission."
-                .red()
-                .to_string(),
-        ))
-        .flags(discord::MessageFlags::EPHEMERAL)
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
         data: Some(data),
     };
 

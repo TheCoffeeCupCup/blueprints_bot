@@ -152,7 +152,7 @@ pub async fn upload_files(files: Vec<File>, servers: Vec<String>) -> Result<(), 
         server.quit().await.unwrap();
     }
 
-    logging::info!("Files uploaded");
+    logging::info!("Uploading files done");
 
     if errors.is_empty() {
         Ok(())

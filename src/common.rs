@@ -43,6 +43,7 @@ pub mod discord {
     pub use twilight_util::builder::message::LabelBuilder;
     pub use twilight_util::builder::message::SelectMenuBuilder;
     pub use twilight_util::builder::message::SelectMenuOptionBuilder;
+    pub use twilight_util::builder::message::TextDisplayBuilder;
 
     pub struct TextInputBuilder<'a> {
         pub custom_id: &'a str,
@@ -51,6 +52,29 @@ pub mod discord {
         pub description: Option<&'a str>,
 
         pub placeholder: Option<&'a str>,
+    }
+
+    pub async fn negative_response(
+        interaction: &InteractionCreate,
+        interaction_client: InteractionClient<'_>,
+        text: &str,
+    ) {
+        use colored::Colorize as _;
+
+        let data = InteractionResponseDataBuilder::new()
+            .content(super::ansi(text.red().to_string()))
+            .flags(MessageFlags::EPHEMERAL)
+            .build();
+
+        let response = InteractionResponse {
+            kind: InteractionResponseType::ChannelMessageWithSource,
+            data: Some(data),
+        };
+
+        interaction_client
+            .create_response(interaction.id, &interaction.token, &response)
+            .await
+            .unwrap();
     }
 }
 
