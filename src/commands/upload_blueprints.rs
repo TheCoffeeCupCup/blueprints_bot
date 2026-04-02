@@ -1,6 +1,6 @@
 use colored::Colorize as _;
 
-use crate::{AnyError, ansi, bot_data, commands, discord, ftp, logging};
+use crate::{ansi, bot_data, commands, discord, ftp, logging};
 
 pub const COMMAND: &'static str = "upload_blueprints";
 pub const MODAL_ID: &'static str = "blueprints_upload_modal";
@@ -37,8 +37,12 @@ pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
 ) {
-    let select_menu =
-        bot_data::create_server_select_menu(None, None, Some(interaction.member.as_ref().unwrap()));
+    let Some(issuing_user) = interaction.member.as_ref() else {
+        logging::error!("Couldn't resolve the member issuing upload blueprints command");
+        return;
+    };
+
+    let select_menu = bot_data::create_server_select_menu(None, None, Some(issuing_user));
 
     let servers_amount = bot_data::get_data().servers.len();
 
@@ -107,12 +111,15 @@ pub async fn process_command(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!("Couldn't display the upload blueprints modal: {err}");
+        })
+        .ok();
 }
 
 fn get_selected_servers(
     submitted_components: &Vec<discord::ModalInteractionComponent>,
-) -> Result<&Vec<String>, AnyError> {
+) -> Result<&Vec<String>, ()> {
     for component in submitted_components {
         if let discord::ModalInteractionComponent::Label(label) = component {
             if let discord::ModalInteractionComponent::StringSelect(select) =
@@ -123,7 +130,7 @@ fn get_selected_servers(
         }
     }
 
-    Err("Selected servers not found in submitted components".into())
+    Err(())
 }
 
 pub async fn process_modal_submition(
@@ -131,6 +138,11 @@ pub async fn process_modal_submition(
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
 ) {
+    let Ok(selected_servers) = get_selected_servers(&submit_data.components) else {
+        logging::error!("Selected servers not found in the submitted components");
+        return;
+    };
+
     let mut files = Vec::<Attachment>::new();
 
     if let Some(resolved) = &submit_data.resolved {
@@ -141,8 +153,6 @@ pub async fn process_modal_submition(
             });
         }
     }
-
-    let selected_servers = get_selected_servers(&submit_data.components).unwrap();
 
     files.sort_by_cached_key(|f| f.filename.clone());
 
@@ -177,22 +187,40 @@ pub async fn process_modal_submition(
     interaction_client
         .create_response(interaction.id, &interaction.token, &response)
         .await
-        .unwrap();
+        .map_err(|err| {
+            logging::error!(
+                "Couldn't send initial status message in response to upload blueprints submission: {err}"
+            );
+        })
+        .ok();
 
     if let (Some(upload_files_future), Some(upload_files_text)) =
         (upload_files_future, upload_files_text)
     {
         let mut errors_list = String::new();
 
-        if let Err(err) = upload_files_future.await.unwrap() {
-            errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
+        match upload_files_future.await {
+            Ok(upload_files_result) => {
+                if let Err(err) = upload_files_result {
+                    errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
+                }
+            }
+            Err(err) => {
+                logging::error!("Error retrieving the result from upload files future: {err}");
+            }
         }
 
+        // Even if there are no errors, the message is updated anyway to remove the "Awaiting for status update" text.
         interaction_client
             .update_response(&interaction.token)
             .content(Some(&ansi(upload_files_text + &errors_list)))
             .await
-            .unwrap();
+            .map_err(|err| {
+                logging::error!(
+                    "Couldn't update the status message after blueprints uploading: {err}"
+                );
+            })
+            .ok();
     }
 }
 
@@ -201,8 +229,11 @@ fn verify_blueprints(
     servers: &Vec<String>,
 ) -> Result<String, String> {
     if attachments.len() == 0 {
+        logging::error!("Expected attached files to upload to the server but none were provided");
         return Err(
-            "Expected attached files to upload to the server but none were provided.".into(),
+            "✗ Expected attached files to upload to the server but none were provided."
+                .red()
+                .to_string(),
         );
     }
 
@@ -233,7 +264,7 @@ fn verify_blueprints(
             .unwrap_or((&full_file_name, ""));
 
         if file_name.contains('/') || file_name.contains('\\') {
-            let error = "you, hacking piece of shit, remove / and/or \\ from the filename";
+            let error = "how the heck did you send a file with such name, get out";
             response += &format!("{}", format!("\n✗ {} ({})", full_file_name, error).red());
 
             has_error = true;

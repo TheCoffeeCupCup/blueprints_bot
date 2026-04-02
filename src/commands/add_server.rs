@@ -195,7 +195,10 @@ pub async fn process_modal_submition(
 
     let response_data = match server_modal_data.to_server_creds() {
         Ok((server_name, server_creds)) => {
-            logging::info!("Adding server \"{server_name}\"");
+            logging::info!(
+                "Adding server \"{server_name}\" IP: {}",
+                server_creds.full_ip
+            );
 
             bot_data::update_data(|data| {
                 data.servers
