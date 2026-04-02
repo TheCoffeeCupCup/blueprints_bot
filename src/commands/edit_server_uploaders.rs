@@ -7,11 +7,7 @@ use colored::Colorize as _;
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-use crate::{
-    bot_data, commands,
-    common::{AnyError, ansi},
-    discord, logging,
-};
+use crate::{bot_data, commands, common::ansi, discord, logging};
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
@@ -112,7 +108,7 @@ pub async fn process_server_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
     let mut server_name: Option<&str> = None;
 
     if let [selected_server_name] = interaction_data.values.as_slice() {
@@ -170,15 +166,13 @@ pub async fn process_server_select(
             logging::error!("Couldn't update edit server uploaders message: {err}");
         })
         .ok();
-
-    Ok(())
 }
 
 pub async fn process_users_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::DeferredUpdateMessage,
         data: None,
@@ -215,8 +209,6 @@ pub async fn process_users_select(
             logging::error!("Couldn't defer update for edit server uploaders message: {err}");
         })
         .ok();
-
-    Ok(())
 }
 
 fn create_users_diff(
@@ -244,7 +236,7 @@ fn create_users_diff(
 pub async fn process_uploaders_submition(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::DeferredUpdateMessage,
         data: None,
@@ -313,8 +305,6 @@ pub async fn process_uploaders_submition(
             logging::error!("Couldn't delete edit server uploaders message: {err}");
         })
         .ok();
-
-    Ok(())
 }
 
 fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::Component> {

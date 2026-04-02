@@ -155,8 +155,7 @@ async fn handle_interaction_create(
                         submit_data,
                         interaction_client,
                     )
-                    .await
-                    .unwrap();
+                    .await;
                 }
                 commands::add_server::MODAL_ID => {
                     commands::add_server::process_modal_submition(
@@ -176,28 +175,29 @@ async fn handle_interaction_create(
             logging::info!("Received message component interaction \"{component_id}\"");
 
             match component_id {
-                "server_select" => commands::edit_server_uploaders::process_server_select(
-                    interaction,
-                    message_component,
-                    interaction_client,
-                )
-                .await
-                .unwrap(),
+                "server_select" => {
+                    commands::edit_server_uploaders::process_server_select(
+                        interaction,
+                        message_component,
+                        interaction_client,
+                    )
+                    .await
+                }
                 "confirm_edit_uploaders" => {
                     commands::edit_server_uploaders::process_uploaders_submition(
                         interaction,
                         interaction_client,
                     )
                     .await
-                    .unwrap()
                 }
-                "users_list" => commands::edit_server_uploaders::process_users_select(
-                    interaction,
-                    message_component,
-                    interaction_client,
-                )
-                .await
-                .unwrap(),
+                "users_list" => {
+                    commands::edit_server_uploaders::process_users_select(
+                        interaction,
+                        message_component,
+                        interaction_client,
+                    )
+                    .await
+                }
                 _ => {}
             }
         }
@@ -212,3 +212,5 @@ async fn handle_interaction_create(
 // TODO: Add more display errors for unhappy pathes
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
 // TODO: Command for removing servers?
+// TODO: Reject adding server when FTP connection fails
+// TODO: Finish replacing plain unwraps with error logging

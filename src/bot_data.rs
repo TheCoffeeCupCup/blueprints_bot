@@ -70,13 +70,16 @@ const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.json";
 static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
     backup_data_file();
 
-    let data = load_data().unwrap_or_default();
+    let data = load_data().unwrap_or_else(|| {
+        logging::warning!("Loading bot data from the default value");
+        BotData::default()
+    });
 
     Arc::new(RwLock::new(data))
 });
 
 fn load_data() -> Option<BotData> {
-    logging::info!("Loading bot data");
+    logging::info!("Lazily loading the bot data");
 
     let data_json = std::fs::read_to_string(BOT_DATA_FILE)
         .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err))
@@ -104,7 +107,7 @@ fn save_data() {
 }
 
 fn backup_data_file() {
-    logging::info!("Backing up bot data");
+    logging::info!("Lazily backing up the bot data");
 
     let data = std::fs::read_to_string(BOT_DATA_FILE)
         .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err));

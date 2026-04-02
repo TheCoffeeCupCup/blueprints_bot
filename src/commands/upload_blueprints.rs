@@ -130,7 +130,7 @@ pub async fn process_modal_submition(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
-) -> Result<(), AnyError> {
+) {
     let mut files = Vec::<Attachment>::new();
 
     if let Some(resolved) = &submit_data.resolved {
@@ -194,8 +194,6 @@ pub async fn process_modal_submition(
             .await
             .unwrap();
     }
-
-    Ok(())
 }
 
 fn verify_blueprints(
