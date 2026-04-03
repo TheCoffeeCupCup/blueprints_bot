@@ -11,7 +11,9 @@ use common::{AnyError, ansi, discord, get_env};
 
 #[tokio::main]
 async fn main() -> Result<(), AnyError> {
-    dotenv::dotenv()?;
+    if let Err(err) = dotenv::dotenv() {
+        println!("Error loading .env file from the workdir: {err}");
+    }
 
     logging::init_log_file()?;
     log_info!("Initialized file logging");
