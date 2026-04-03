@@ -211,32 +211,37 @@ pub async fn process_users_select(
         .ok();
 }
 
-fn create_users_diff(
+fn create_uploaders_diff(
     original: &HashSet<bot_data::Mentionable>,
-    new: &HashSet<bot_data::Mentionable>,
+    new: &Option<HashSet<bot_data::Mentionable>>,
 ) -> (String, String) {
-    let added_users = new.difference(original).map(|m| m.to_mention()).join(", ");
-    let removed_users = original.difference(new).map(|m| m.to_mention()).join(", ");
+    let (mut added_users, mut removed_users) = match new {
+        Some(new) => (
+            new.difference(original).map(|m| m.to_mention()).join(", "),
+            original.difference(new).map(|m| m.to_mention()).join(", "),
+        ),
+        None => (String::new(), String::new()),
+    };
 
-    let mut added_users_text = String::new();
-
-    if !added_users.is_empty() {
-        added_users_text = format!("\nAdded: {}.", added_users);
+    if added_users.is_empty() {
+        added_users = "none".to_string();
     }
 
-    let mut removed_users_text = String::new();
-
-    if !removed_users.is_empty() {
-        removed_users_text = format!("\nRemoved: {}.", removed_users);
+    if removed_users.is_empty() {
+        removed_users = "none".to_string();
     }
 
-    (added_users_text, removed_users_text)
+    (
+        format!("Added: {}.", added_users),
+        format!("Removed: {}.", removed_users),
+    )
 }
 
-pub async fn process_uploaders_submition(
+async fn delete_interaction_message(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    interaction_client: &discord::InteractionClient<'_>,
 ) {
+    // For whatever reason I first need to create deferred update response to delete the message.
     let response = discord::InteractionResponse {
         kind: discord::InteractionResponseType::DeferredUpdateMessage,
         data: None,
@@ -246,64 +251,84 @@ pub async fn process_uploaders_submition(
         .create_response(interaction.id, &interaction.token, &response)
         .await
         .map_err(|err| {
-            logging::error!("Couldn't defer update for edit server uploaders message: {err}");
+            logging::error!("Couldn't send defer update response for message deletion: {err}");
         })
         .ok();
-
-    if let Some(interaction_message) = &interaction.message {
-        if let Some(form_data) = ACTIVE_FORMS.lock().await.get(&interaction_message.id) {
-            if let (command_interaction_token, Some(server_name), Some(selected_users)) = (
-                &form_data.command_interaction_token,
-                &form_data.server_name,
-                &form_data.selected_users,
-            ) {
-                let mut response = String::new();
-
-                bot_data::update_data(|data| {
-                    if let Some(server) = data.servers.get_mut(server_name) {
-                        logging::info!("Updating server uploaders for server \"{server_name}\"");
-
-                        let (added_users, removed_users) =
-                            create_users_diff(&server.uploaders, selected_users);
-
-                        // TODO: Fix these being printed weirdly in logs.
-                        logging::info!("{added_users}");
-                        logging::info!("{removed_users}");
-
-                        let response_title = ansi(
-                            format!(
-                                "✓ Uploaders list for the server \"{server_name}\" is successfully updated."
-                            )
-                            .green()
-                            .to_string(),
-                        );
-
-                        response = format!("{response_title}{added_users}{removed_users}");
-
-                        server.uploaders = selected_users.clone();
-                    }
-                });
-
-                interaction_client
-                    .update_response(command_interaction_token)
-                    .content(Some(&response))
-                    .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
-                    .await
-                    .map_err(|err| {
-                        logging::error!(
-                            "Couldn't update edit server uploaders status message: {err}"
-                        );
-                    })
-                    .ok();
-            }
-        }
-    }
 
     interaction_client
         .delete_response(&interaction.token)
         .await
         .map_err(|err| {
-            logging::error!("Couldn't delete edit server uploaders message: {err}");
+            logging::error!("Couldn't delete the message: {err}");
+        })
+        .ok();
+}
+
+pub async fn process_uploaders_submition(
+    interaction: &discord::InteractionCreate,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    logging::info!("Processing edit uploaders submission");
+
+    delete_interaction_message(interaction, &interaction_client).await;
+
+    let Some(interaction_message) = &interaction.message else {
+        logging::error!("Couldn't get the message from interaction");
+        return;
+    };
+
+    let form_lock = ACTIVE_FORMS.lock().await;
+    let Some(form_data) = form_lock.get(&interaction_message.id) else {
+        logging::error!("Couldn't associate the form data with interaction message id");
+        return;
+    };
+
+    let Some(server_name) = &form_data.server_name else {
+        logging::error!("Server name is missing in the form data");
+        return;
+    };
+
+    let mut response = String::new();
+
+    logging::info!("Updating server uploaders for server \"{server_name}\"");
+
+    bot_data::update_data(|data| {
+        if let Some(server) = data.servers.get_mut(server_name) {
+            let response_title = ansi(
+                format!(
+                    "✓ Uploaders list for the server \"{server_name}\" is successfully updated."
+                )
+                .green()
+                .to_string(),
+            );
+
+            let selected_users = &form_data.selected_users;
+
+            let (added_users, removed_users) =
+                create_uploaders_diff(&server.uploaders, selected_users);
+
+            logging::info!("{added_users}");
+            logging::info!("{removed_users}");
+
+            response = format!("{response_title}\n{added_users}\n{removed_users}");
+
+            if let Some(selected_users) = selected_users {
+                server.uploaders = selected_users.clone();
+            }
+        } else {
+            let error = format!("Server \"{server_name}\" not found in the bot data");
+            logging::error!("{error}");
+            response = ansi(format!("✗ {error}").red().to_string());
+        }
+    });
+
+    interaction_client
+        .update_response(&form_data.command_interaction_token)
+        .content(Some(&response))
+        .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
+        .await
+        .map_err(|err| {
+            logging::error!("Couldn't update edit server uploaders status message: {err}");
         })
         .ok();
 }
