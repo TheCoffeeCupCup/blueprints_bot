@@ -17,7 +17,7 @@ pub struct ServerCredentials {
     pub full_ip: String,
     pub user: String,
     pub password: String,
-    pub world_name: String,
+    pub session_name: String,
 }
 
 pub fn get_server_creds(server_name: &str) -> Option<ServerCredentials> {
@@ -39,6 +39,29 @@ impl Mentionable {
             Mentionable::User(user) => format!("<@{}>", user.get()),
             Mentionable::Role(role) => format!("<@&{}>", role.get()),
         }
+    }
+
+    pub fn corresponds_to_member(&self, member: &discord::PartialMember) -> bool {
+        match self {
+            Mentionable::User(uploader_id) => {
+                if let Some(user) = member.user.as_ref() {
+                    if user.id == *uploader_id {
+                        return true;
+                    }
+                } else {
+                    logging::error!(
+                        "Couldn't resolve the user while checking corresponds_to_member"
+                    );
+                }
+            }
+            Mentionable::Role(role_id) => {
+                if member.roles.contains(role_id) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
 
@@ -120,7 +143,10 @@ fn backup_data_file() {
 }
 
 pub fn get_data() -> RwLockReadGuard<'static, BotData> {
-    BOT_DATA.read().expect("Failed to lock bot data mutex.")
+    BOT_DATA
+        .read()
+        .map_err(|err| logging::error!("Failed to lock bot data mutex: {err}"))
+        .unwrap()
 }
 
 pub fn update_data<F>(updater: F)
@@ -152,22 +178,7 @@ pub fn create_server_select_menu(
             if !server_data
                 .uploaders
                 .iter()
-                .find(|uploader| {
-                    match uploader {
-                        Mentionable::User(uploader_id) => {
-                            if issuing_user.user.as_ref().unwrap().id == *uploader_id {
-                                return true;
-                            }
-                        }
-                        Mentionable::Role(role_id) => {
-                            if issuing_user.roles.contains(role_id) {
-                                return true;
-                            }
-                        }
-                    }
-
-                    return false;
-                })
+                .find(|uploader| uploader.corresponds_to_member(issuing_user))
                 .is_some()
             {
                 continue;

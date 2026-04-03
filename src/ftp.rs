@@ -5,7 +5,7 @@ type File = commands::upload_blueprints::Attachment;
 
 const BLUEPRINTS_BASE_FOLDER: &'static str = ".config/Epic/FactoryGame/Saved/SaveGames/blueprints";
 
-async fn establish_ftp_connection(
+pub async fn establish_ftp_connection(
     server_name: String,
     server_creds: bot_data::ServerCredentials,
 ) -> Result<FtpStream, String> {
@@ -16,7 +16,7 @@ async fn establish_ftp_connection(
         logging::warning!(
             "Couldn't connect to the server \"{server_name}\" via `{full_ip}`: {err}"
         );
-        format!("⚠ Couldn't connect to the server \"{server_name}\".")
+        format!("Couldn't connect to the server \"{server_name}\".")
     })?;
 
     ftp_stream
@@ -24,16 +24,16 @@ async fn establish_ftp_connection(
         .await
         .map_err(|err| {
             logging::warning!("Couldn't log into the server \"{server_name}\": {err}");
-            format!("⚠ Couldn't log into the server \"{server_name}\".")
+            format!("Couldn't log into the server \"{server_name}\".")
         })?;
 
-    let folder_path = &format!("{}/{}", BLUEPRINTS_BASE_FOLDER, server_creds.world_name);
+    let folder_path = &format!("{}/{}", BLUEPRINTS_BASE_FOLDER, server_creds.session_name);
 
     ftp_stream.cwd(folder_path).await.map_err(|err| {
         logging::warning!(
             "Couldn't access blueprints folder `{folder_path}` on the server \"{server_name}\": {err}"
         );
-        format!("⚠ Couldn't access blueprints folder on the server \"{server_name}\".")
+        format!("Couldn't access blueprints folder on the server \"{server_name}\".")
     })?;
 
     logging::info!("Connected to FTP \"{server_name}\"");
@@ -48,7 +48,17 @@ async fn establish_ftp_connections(
     let mut ftp_servers_tasks = tokio::task::JoinSet::new();
 
     for server_name in servers {
-        let server_creds = bot_data::get_server_creds(&server_name).expect("Missing server creds");
+        let Some(server_creds) = bot_data::get_server_creds(&server_name) else {
+            logging::error!(
+                "Couldn't connect to the server \"{server_name}\" - credentials not found in bot data"
+            );
+
+            errors.push(format!(
+                "⚠ Error retrieving credentials for the server \"{server_name}\"."
+            ));
+
+            continue;
+        };
 
         // SFTP might be needed in future (used on Illuminate's servers).
         if server_creds.connection != bot_data::ConnectionType::FTP {
@@ -72,7 +82,7 @@ async fn establish_ftp_connections(
     for connection_result in ftp_servers_tasks.join_all().await {
         match connection_result {
             Ok(ftp_stream) => ftp_servers.push(ftp_stream),
-            Err(err) => errors.push(err),
+            Err(err) => errors.push(format!("⚠ {err}")),
         };
     }
 
@@ -149,7 +159,11 @@ pub async fn upload_files(files: Vec<File>, servers: Vec<String>) -> Result<(), 
     forward_files(&files, &mut ftp_servers, &mut errors).await;
 
     for server in &mut ftp_servers {
-        server.quit().await.unwrap();
+        server
+            .quit()
+            .await
+            .map_err(|err| logging::error!("Error closing FTP connection: {err}"))
+            .ok();
     }
 
     logging::info!("Uploading files done");

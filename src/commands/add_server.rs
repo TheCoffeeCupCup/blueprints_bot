@@ -1,7 +1,7 @@
 use colored::Colorize as _;
 
 use crate::common::ansi;
-use crate::{bot_data, discord, logging};
+use crate::{bot_data, discord, ftp, logging};
 
 pub const COMMAND: &'static str = "add_server";
 pub const MODAL_ID: &'static str = "add_server_modal";
@@ -52,8 +52,8 @@ pub async fn process_command(
         }
         .build(),
         discord::TextInputBuilder {
-            custom_id: "world_name",
-            label: "Satisfactory world name",
+            custom_id: "session_name",
+            label: "Satisfactory session name",
             description: Some(
                 "The name of the folder under `.config/Epic/FactoryGame/Saved/SaveGames/blueprints/`.",
             ),
@@ -92,7 +92,7 @@ struct ServerCredentialsModalData<'a> {
     pub full_ip: Option<&'a str>,
     pub ftp_username: Option<&'a str>,
     pub ftp_password: Option<&'a str>,
-    pub world_name: Option<&'a str>,
+    pub session_name: Option<&'a str>,
 
     pub components_data: &'a Vec<discord::ModalInteractionComponent>,
 }
@@ -119,7 +119,7 @@ impl<'a> ServerCredentialsModalData<'a> {
             full_ip: None,
             ftp_username: None,
             ftp_password: None,
-            world_name: None,
+            session_name: None,
 
             components_data: &modal_submit_data.components,
         };
@@ -134,7 +134,7 @@ impl<'a> ServerCredentialsModalData<'a> {
                         "full_ip" => result.full_ip = Some(&text_input.value.trim()),
                         "ftp_username" => result.ftp_username = Some(&text_input.value),
                         "ftp_password" => result.ftp_password = Some(&text_input.value),
-                        "world_name" => result.world_name = Some(&text_input.value),
+                        "session_name" => result.session_name = Some(&text_input.value),
                         _ => {}
                     }
                 }
@@ -151,7 +151,7 @@ impl<'a> ServerCredentialsModalData<'a> {
         push_if_none(&mut missing_list, &self.full_ip, "full_ip");
         push_if_none(&mut missing_list, &self.ftp_username, "ftp_username");
         push_if_none(&mut missing_list, &self.ftp_password, "ftp_password");
-        push_if_none(&mut missing_list, &self.world_name, "world_name");
+        push_if_none(&mut missing_list, &self.session_name, "session_name");
 
         if missing_list.is_empty() {
             let full_ip = self.full_ip.unwrap();
@@ -169,7 +169,7 @@ impl<'a> ServerCredentialsModalData<'a> {
                 full_ip: full_ip.to_string(),
                 user: self.ftp_username.unwrap().to_string(),
                 password: self.ftp_password.unwrap().to_string(),
-                world_name: self.world_name.unwrap().to_string(),
+                session_name: self.session_name.unwrap().to_string(),
             };
 
             return Ok((self.server_name.unwrap().to_string(), server_creds));
@@ -193,35 +193,34 @@ pub async fn process_modal_submition(
 
     let server_modal_data = ServerCredentialsModalData::from_modal_submit_data(submit_data);
 
-    let response_data = match server_modal_data.to_server_creds() {
+    let mut matched_server_name: Option<String> = None;
+    let mut matched_server_creds: Option<bot_data::ServerCredentials> = None;
+
+    let response = match server_modal_data.to_server_creds() {
         Ok((server_name, server_creds)) => {
-            logging::info!(
-                "Adding server \"{server_name}\" IP: {}",
-                server_creds.full_ip
-            );
+            logging::info!("Showing loading for server adding response");
 
-            bot_data::update_data(|data| {
-                data.servers
-                    .insert(server_name.to_string(), bot_data::Server::new(server_creds));
-            });
+            matched_server_name = Some(server_name.clone());
+            matched_server_creds = Some(server_creds.clone());
 
-            discord::InteractionResponseDataBuilder::new()
-                .content(ansi(
-                    format!("✓ Server \"{}\" is successfully added.", server_name)
-                        .green()
-                        .to_string(),
-                ))
-                .build()
+            discord::InteractionResponse {
+                kind: discord::InteractionResponseType::DeferredChannelMessageWithSource,
+                data: None,
+            }
         }
-        Err(err) => discord::InteractionResponseDataBuilder::new()
-            .content(ansi(err.red().to_string()))
-            .flags(discord::MessageFlags::EPHEMERAL)
-            .build(),
-    };
+        Err(err) => {
+            logging::info!("Server adding rejected");
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(response_data),
+            let response_data = discord::InteractionResponseDataBuilder::new()
+                .content(ansi(err.red().to_string()))
+                .flags(discord::MessageFlags::EPHEMERAL)
+                .build();
+
+            discord::InteractionResponse {
+                kind: discord::InteractionResponseType::ChannelMessageWithSource,
+                data: Some(response_data),
+            }
+        }
     };
 
     interaction_client
@@ -233,4 +232,48 @@ pub async fn process_modal_submition(
         .ok();
 
     logging::info!("Responded to a server adding modal");
+
+    if let (Some(server_name), Some(server_creds)) = (matched_server_name, matched_server_creds) {
+        let connection_result =
+            ftp::establish_ftp_connection(server_name.clone(), server_creds.clone()).await;
+
+        let updated_content = match connection_result {
+            Ok(_) => {
+                logging::info!(
+                    "Adding server \"{server_name}\" IP: {}",
+                    server_creds.full_ip
+                );
+
+                bot_data::update_data(|data| {
+                    data.servers
+                        .insert(server_name.to_string(), bot_data::Server::new(server_creds));
+                });
+
+                format!("✓ Server \"{}\" is successfully added.", server_name)
+                    .green()
+                    .to_string()
+            }
+            Err(err) => {
+                logging::info!(
+                    "Adding server \"{server_name}\" is rejected since connection attempt failed"
+                );
+
+                format!("Error adding server \"{server_name}\"\n✗ {err}")
+                    .red()
+                    .to_string()
+            }
+        };
+
+        logging::info!("Updating the response to add_server modal submission");
+        interaction_client
+            .update_response(&interaction.token)
+            .content(Some(&ansi(updated_content)))
+            .await
+            .map_err(|err| {
+                logging::error!(
+                    "Couldnt't send updated response to add_server modal submission: {err}"
+                );
+            })
+            .ok();
+    }
 }

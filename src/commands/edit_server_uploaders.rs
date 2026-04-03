@@ -191,11 +191,11 @@ pub async fn process_users_select(
 
         if let Some(selected_users) = selected_users {
             if let Some(selected_mentionables) = interaction_data.resolved.as_ref() {
-                for (user_id, _user) in &selected_mentionables.users {
+                for user_id in selected_mentionables.users.keys() {
                     selected_users.insert(bot_data::Mentionable::User(*user_id));
                 }
 
-                for (role_id, _role) in &selected_mentionables.roles {
+                for role_id in selected_mentionables.roles.keys() {
                     selected_users.insert(bot_data::Mentionable::Role(*role_id));
                 }
             }
@@ -266,6 +266,7 @@ pub async fn process_uploaders_submition(
                         let (added_users, removed_users) =
                             create_users_diff(&server.uploaders, selected_users);
 
+                        // TODO: Fix these being printed weirdly in logs.
                         logging::info!("{added_users}");
                         logging::info!("{removed_users}");
 
@@ -321,49 +322,48 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
     // If there's a selected server then uploaders select menu and submit button will be shown.
     if let Some(server_name) = selected_server {
         let bot_data = &bot_data::get_data();
-        let server = bot_data
-            .servers
-            .get(server_name)
-            .expect("Couldn't find server by name");
-
-        let mut current_uploaders = Vec::<discord::component::SelectDefaultValue>::new();
-        for uploader in &server.uploaders {
-            match *uploader {
-                bot_data::Mentionable::User(user_id) => {
-                    current_uploaders.push(discord::component::SelectDefaultValue::User(user_id))
-                }
-                bot_data::Mentionable::Role(role_id) => {
-                    current_uploaders.push(discord::component::SelectDefaultValue::Role(role_id))
+        if let Some(server) = bot_data.servers.get(server_name) {
+            let mut current_uploaders = Vec::<discord::component::SelectDefaultValue>::new();
+            for uploader in &server.uploaders {
+                match *uploader {
+                    bot_data::Mentionable::User(user_id) => current_uploaders
+                        .push(discord::component::SelectDefaultValue::User(user_id)),
+                    bot_data::Mentionable::Role(role_id) => current_uploaders
+                        .push(discord::component::SelectDefaultValue::Role(role_id)),
                 }
             }
-        }
 
-        components.push(discord::Component::ActionRow(
-            discord::ActionRowBuilder::new()
-                .component(
-                    discord::SelectMenuBuilder::new(
-                        "users_list",
-                        discord::component::SelectMenuType::Mentionable,
-                    )
-                    .default_values(current_uploaders)
-                    .min_values(0)
-                    .max_values(25)
-                    .placeholder("Uploaders")
-                    .build(),
-                )
-                .build(),
-        ));
-
-        components.push(discord::Component::ActionRow(
-            discord::ActionRowBuilder::new()
-                .component(
-                    discord::ButtonBuilder::new(discord::component::ButtonStyle::Success)
-                        .custom_id("confirm_edit_uploaders")
-                        .label("Save")
+            components.push(discord::Component::ActionRow(
+                discord::ActionRowBuilder::new()
+                    .component(
+                        discord::SelectMenuBuilder::new(
+                            "users_list",
+                            discord::component::SelectMenuType::Mentionable,
+                        )
+                        .default_values(current_uploaders)
+                        .min_values(0)
+                        .max_values(25)
+                        .placeholder("Uploaders")
                         .build(),
-                )
-                .build(),
-        ));
+                    )
+                    .build(),
+            ));
+
+            components.push(discord::Component::ActionRow(
+                discord::ActionRowBuilder::new()
+                    .component(
+                        discord::ButtonBuilder::new(discord::component::ButtonStyle::Success)
+                            .custom_id("confirm_edit_uploaders")
+                            .label("Save")
+                            .build(),
+                    )
+                    .build(),
+            ));
+        } else {
+            logging::error!(
+                "Couldn't find server \"{server_name}\" selected in edit server uploaders in bot data"
+            );
+        }
     }
 
     components

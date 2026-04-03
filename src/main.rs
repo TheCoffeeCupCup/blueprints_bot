@@ -212,5 +212,4 @@ async fn handle_interaction_create(
 // TODO: Add more display errors for unhappy pathes
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
 // TODO: Command for removing servers?
-// TODO: Reject adding server when FTP connection fails
-// TODO: Finish replacing plain unwraps with error logging
+// TODO: Encrypt bot data
