@@ -25,6 +25,8 @@ pub struct Attachment {
 }
 
 pub fn create_command() -> discord::Command {
+    logging::info!("Creating command `/{COMMAND}`");
+
     discord::CommandBuilder::new(
         COMMAND,
         "Upload blueprint files to a server",

@@ -12,6 +12,8 @@ use crate::{bot_data, commands, common::ansi, discord, logging};
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
 pub fn create_command() -> discord::Command {
+    logging::info!("Creating command `/{COMMAND}`");
+
     discord::CommandBuilder::new(
         COMMAND,
         "Modify the list of uploaders for one of the available servers",

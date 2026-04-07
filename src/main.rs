@@ -36,6 +36,7 @@ async fn main() -> Result<(), AnyError> {
             &[
                 commands::upload_blueprints::create_command(),
                 commands::add_server::create_command(),
+                commands::remove_server::create_command(),
                 commands::edit_server_uploaders::create_command(),
             ],
         )
@@ -134,6 +135,10 @@ async fn handle_interaction_create(
                 commands::add_server::COMMAND => {
                     commands::add_server::process_command(&interaction, interaction_client).await;
                 }
+                commands::remove_server::COMMAND => {
+                    commands::remove_server::process_command(&interaction, interaction_client)
+                        .await;
+                }
                 commands::edit_server_uploaders::COMMAND => {
                     commands::edit_server_uploaders::process_command(
                         &interaction,
@@ -161,6 +166,14 @@ async fn handle_interaction_create(
                 }
                 commands::add_server::MODAL_ID => {
                     commands::add_server::process_modal_submition(
+                        &interaction,
+                        submit_data,
+                        interaction_client,
+                    )
+                    .await;
+                }
+                commands::remove_server::MODAL_ID => {
+                    commands::remove_server::process_modal_submition(
                         &interaction,
                         submit_data,
                         interaction_client,
@@ -211,7 +224,5 @@ async fn handle_interaction_create(
 }
 
 // TODO: Limit the size of blueprints folder
-// TODO: Add more display errors for unhappy pathes
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
-// TODO: Command for removing servers?
 // TODO: Encrypt bot data

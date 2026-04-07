@@ -7,6 +7,8 @@ pub const COMMAND: &'static str = "add_server";
 pub const MODAL_ID: &'static str = "add_server_modal";
 
 pub fn create_command() -> discord::Command {
+    logging::info!("Creating command `/{COMMAND}`");
+
     discord::CommandBuilder::new(
         COMMAND,
         "Add a new server for blueprints uploading",
