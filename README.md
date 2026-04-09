@@ -3,14 +3,13 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
 
 ## How to build
 - If you don't have **Rust, install** it following the instructions at https://rust-lang.org/tools/install.
-- **Download the source code** repository or clone it with [Git](https://git-scm.com/install): `git clone https://github.com/TheCoffeeCupCup/css_installer`
-- From the project root, **run** `cargo build --release` (or `cargo run --release` to run the bot once the executable is built)
+- **Download the source code** repository or clone it with [Git](https://git-scm.com/install): `git clone https://github.com/TheCoffeeCupCup/css_installer`.
+- Copy `src\secrets.example.rs` into `src\secrets.rs` and replace the placeholder values with the real ones.
+- From the project root, **run** `cargo build --release` (or `cargo run --release` to run the bot once the executable is built).
 
 ## How to run
-- You need a `.env` file in the directory you're running the executable from. The example of its contents can be found in `.env.example`
-- Download the latest release for your platform at `https://github.com/TheCoffeeCupCup/css_installer/releases` and run the executable file
-- If you have the source code, run `cargo run --release` to build and run the code
-    - If you just want to run the built executable, you can do so from `target\release\ccs_discord_bot`
+- Use `cargo run --release` to build and run the code.
+    - If you just want to run the built executable, you can do so from `target\release\ccs_discord_bot`.
 
 ## Features
 - Allows admins to set up the servers and uploaders one time, afterwards server members with corresponding permissions can upload the files all they want without disturbing anyone.

@@ -1,5 +1,3 @@
-use crate::logging;
-
 pub mod discord {
     pub use twilight_http::Client as HttpClient;
     pub use twilight_http::client::InteractionClient;
@@ -111,12 +109,6 @@ impl discord::TextInputBuilder<'_> {
 }
 
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
-
-pub fn get_env(var: &'static str) -> String {
-    std::env::var(var)
-        .map_err(|err| logging::error!("Couldn't retrieve \"{var}\" env var: {err}"))
-        .expect(&format!("{var} environment variable is not found. Consider adding it in the .env file in the workdir."))
-}
 
 pub fn ansi(formatted: String) -> String {
     format!("```ansi\n{}\n```", formatted)

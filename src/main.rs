@@ -3,29 +3,26 @@ mod commands;
 mod common;
 mod ftp;
 mod logging;
+mod secrets;
 
 use itertools::Itertools as _;
 use twilight_gateway::StreamExt as _;
 
-use common::{AnyError, ansi, discord, get_env};
+use common::{AnyError, ansi, discord};
 
 #[tokio::main]
 async fn main() -> Result<(), AnyError> {
-    if let Err(err) = dotenv::dotenv() {
-        println!("Error loading .env file from the workdir: {err}");
-    }
-
     logging::init_log_file()?;
     log_info!("Initialized file logging");
 
-    let token = get_env("DISCORD_TOKEN");
     let intents = discord::Intents::empty();
 
+    let token = secrets::DISCORD_TOKEN.to_string();
     let mut shard = discord::Shard::new(discord::ShardId::ONE, token.clone(), intents);
     let http = std::sync::Arc::new(discord::HttpClient::new(token));
 
     let application_id = http.current_user_application().await?.model().await?.id;
-    let target_guild_id = discord::Id::new(get_env("GUILD_ID").parse()?);
+    let target_guild_id = discord::Id::new(secrets::GUILD_ID.parse()?);
 
     let interaction_client = http.interaction(application_id);
 
