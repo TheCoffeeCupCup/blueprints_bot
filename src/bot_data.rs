@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
+use std::sync::{Arc, LazyLock, Once, RwLock, RwLockReadGuard};
 
 use serde::{Deserialize, Serialize};
 
@@ -106,12 +106,10 @@ fn get_bot_data_keys() -> Result<encryption::Passphrase, String> {
 
 ///////////////////////////////////////////////////
 
-const BOT_DATA_FILE: &'static str = "bot_data.json.bin";
-const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.json.bin";
+const BOT_DATA_FILE: &'static str = "bot_data.bin";
+const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.bin";
 
 static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
-    backup_data_file();
-
     let data = load_data().unwrap_or_else(|| {
         logging::warning!("Loading bot data from the default value");
         BotData::default()
@@ -137,10 +135,18 @@ fn load_data() -> Option<BotData> {
         .map_err(|err| logging::warning!("Couldn't parse bot data file: {err}"))
         .ok();
 
+    logging::info!("Bot data is loaded from the file");
+
     data
 }
 
 fn save_data() {
+    static BACKUP: Once = Once::new();
+
+    BACKUP.call_once(|| {
+        backup_data_file();
+    });
+
     logging::info!("Saving bot data");
 
     let data: &BotData = &get_data();
@@ -177,7 +183,7 @@ fn save_data() {
 }
 
 fn backup_data_file() {
-    logging::info!("Lazily backing up the bot data");
+    logging::info!("Backing up the bot data");
 
     std::fs::copy(BOT_DATA_FILE, BACKUP_BOT_DATA_FILE)
         .map_err(|err| logging::error!("Couldn't copy bot data into backup: {err}"))

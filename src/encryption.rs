@@ -47,7 +47,7 @@ fn try_decrypt(encrypted_data: &[u8], passphrase: &str) -> Result<Vec<u8>, Strin
 
     let decrypted_data = cipher
         .decrypt(nonce.into(), encrypted_data)
-        .map_err(|err| err.to_string());
+        .map_err(|_| "encryption key is wrong or data is corrupted".to_string());
 
     decrypted_data
 }
