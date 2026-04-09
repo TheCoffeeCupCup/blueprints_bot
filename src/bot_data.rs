@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{bot_data, discord, logging};
+use crate::{bot_data, discord, encryption, logging, secrets};
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
 pub enum ConnectionType {
@@ -87,8 +87,27 @@ pub struct BotData {
 
 ///////////////////////////////////////////////////
 
-const BOT_DATA_FILE: &'static str = "bot_data.json";
-const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.json";
+fn get_bot_data_keys() -> Result<encryption::Passphrase, String> {
+    let primary = secrets::bot_data_key();
+    let secondary = secrets::last_bot_data_key();
+
+    if primary.is_empty() {
+        return Err("Bot data key must not be empty".to_string());
+    }
+
+    let secondary = if secondary.is_empty() {
+        None
+    } else {
+        Some(secondary)
+    };
+
+    Ok(encryption::Passphrase { primary, secondary })
+}
+
+///////////////////////////////////////////////////
+
+const BOT_DATA_FILE: &'static str = "bot_data.json.bin";
+const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.json.bin";
 
 static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
     backup_data_file();
@@ -104,12 +123,18 @@ static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
 fn load_data() -> Option<BotData> {
     logging::info!("Lazily loading the bot data");
 
-    let data_json = std::fs::read_to_string(BOT_DATA_FILE)
-        .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err))
+    let encrypted_data = std::fs::read(BOT_DATA_FILE)
+        .map_err(|err| logging::warning!("Couldn't read bot data file: {err}"))
         .ok()?;
 
-    let data = serde_json::from_str(&data_json)
-        .map_err(|err| logging::warning!("Couldn't parse bot data file: {}", err))
+    let passphrase = get_bot_data_keys()
+        .map_err(|err| logging::error!("Couldn't retrieve bot data keys: {err}"))
+        .ok()?;
+
+    let decrypted_data = encryption::decrypt(&encrypted_data, &passphrase)?;
+
+    let data = serde_json::from_slice(&decrypted_data)
+        .map_err(|err| logging::warning!("Couldn't parse bot data file: {err}"))
         .ok();
 
     data
@@ -118,28 +143,45 @@ fn load_data() -> Option<BotData> {
 fn save_data() {
     logging::info!("Saving bot data");
 
-    if let Some(file) = std::fs::File::create(BOT_DATA_FILE)
-        .map_err(|err| logging::error!("Couldn't create a file for bot data: {}", err))
-        .ok()
-    {
-        let data: &BotData = &get_data();
-        serde_json::to_writer_pretty(file, data)
-            .map_err(|err| logging::error!("Couldn't write bot data to a file: {}", err))
-            .ok();
-    }
+    let data: &BotData = &get_data();
+
+    let bytes = match serde_json::to_vec(data) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            logging::error!("Couldn't serialize bot data: {err}");
+            return;
+        }
+    };
+
+    let passphrase = match get_bot_data_keys() {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            logging::error!("Couldn't retrieve bot data key: {err}");
+            return;
+        }
+    };
+
+    let encrypted_data = match encryption::encrypt(&bytes, &passphrase.primary) {
+        Ok(encrypted_data) => encrypted_data,
+        Err(err) => {
+            logging::error!("Couldn't encrypt bot data: {err}");
+            return;
+        }
+    };
+
+    std::fs::write(BOT_DATA_FILE, encrypted_data)
+        .map_err(|err| logging::error!("Couldn't write bot data to a file: {err}"))
+        .ok();
+
+    logging::info!("Bot data successfully saved");
 }
 
 fn backup_data_file() {
     logging::info!("Lazily backing up the bot data");
 
-    let data = std::fs::read_to_string(BOT_DATA_FILE)
-        .map_err(|err| logging::warning!("Couldn't read bot data file: {}", err));
-
-    if let Ok(data) = data {
-        std::fs::write(BACKUP_BOT_DATA_FILE, data)
-            .map_err(|err| logging::error!("Couldn't write bot data backup: {}", err))
-            .ok();
-    }
+    std::fs::copy(BOT_DATA_FILE, BACKUP_BOT_DATA_FILE)
+        .map_err(|err| logging::error!("Couldn't copy bot data into backup: {err}"))
+        .ok();
 }
 
 pub fn get_data() -> RwLockReadGuard<'static, BotData> {
@@ -155,7 +197,7 @@ where
 {
     if let Some(mut data) = BOT_DATA
         .write()
-        .map_err(|err| logging::error!("Couldn't lock bot data for write {}", err))
+        .map_err(|err| logging::error!("Couldn't lock bot data for write {err}"))
         .ok()
     {
         updater(&mut data);

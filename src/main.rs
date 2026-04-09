@@ -1,6 +1,7 @@
 mod bot_data;
 mod commands;
 mod common;
+mod encryption;
 mod ftp;
 mod logging;
 mod secrets;
@@ -17,12 +18,12 @@ async fn main() -> Result<(), AnyError> {
 
     let intents = discord::Intents::empty();
 
-    let token = secrets::DISCORD_TOKEN.to_string();
+    let token = secrets::discord_token();
     let mut shard = discord::Shard::new(discord::ShardId::ONE, token.clone(), intents);
     let http = std::sync::Arc::new(discord::HttpClient::new(token));
 
     let application_id = http.current_user_application().await?.model().await?.id;
-    let target_guild_id = discord::Id::new(secrets::GUILD_ID.parse()?);
+    let target_guild_id = discord::Id::new(secrets::guild_id().parse()?);
 
     let interaction_client = http.interaction(application_id);
 
@@ -222,4 +223,4 @@ async fn handle_interaction_create(
 
 // TODO: Limit the size of blueprints folder
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
-// TODO: Encrypt bot data
+// TODO: Docker container

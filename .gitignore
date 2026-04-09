@@ -3,6 +3,6 @@
 .env
 src/secrets.rs
 
-bot_data.json
-bot_data_backup.json
+bot_data.json.bin
+bot_data_backup.json.bin
 logs/
