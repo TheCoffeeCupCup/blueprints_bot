@@ -1,0 +1,20 @@
+services:
+  ccs_discord_bot:
+    build: .
+    container_name: ccs_discord_bot
+    restart: always
+    volumes:
+      - bot_data:/app/bot_data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bot_data:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "${PWD}/bot_data"
