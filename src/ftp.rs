@@ -8,11 +8,16 @@ const BLUEPRINTS_BASE_FOLDER: &'static str = ".config/Epic/FactoryGame/Saved/Sav
 // The limit here is slightly below what we discovered by experiments because the value isn't set in stone.
 const BLUEPRINTS_AMOUNT_LIMIT: usize = 600;
 
+pub struct Server {
+    pub server_name: String,
+    pub ftp_stream: FtpStream,
+}
+
 pub async fn establish_ftp_connection(
     server_name: String,
     server_creds: bot_data::ServerCredentials,
     check_files_amount: bool,
-) -> Result<FtpStream, String> {
+) -> Result<Server, String> {
     logging::info!("Connecting to FTP \"{server_name}\"");
 
     let full_ip = &server_creds.full_ip;
@@ -67,13 +72,15 @@ pub async fn establish_ftp_connection(
 
     logging::info!("Connected to FTP \"{server_name}\"");
 
-    Ok(ftp_stream)
+    let server = Server {
+        server_name,
+        ftp_stream,
+    };
+
+    Ok(server)
 }
 
-async fn establish_ftp_connections(
-    servers: &Vec<String>,
-    errors: &mut Vec<String>,
-) -> Vec<FtpStream> {
+async fn establish_ftp_connections(servers: &Vec<String>, errors: &mut Vec<String>) -> Vec<Server> {
     let mut ftp_servers_tasks = tokio::task::JoinSet::new();
 
     for server_name in servers {
@@ -110,11 +117,11 @@ async fn establish_ftp_connections(
         ));
     }
 
-    let mut ftp_servers = Vec::<FtpStream>::new();
+    let mut ftp_servers = Vec::<Server>::new();
 
     for connection_result in ftp_servers_tasks.join_all().await {
         match connection_result {
-            Ok(ftp_stream) => ftp_servers.push(ftp_stream),
+            Ok(server) => ftp_servers.push(server),
             Err(err) => errors.push(format!("⚠ {err}")),
         };
     }
@@ -122,9 +129,14 @@ async fn establish_ftp_connections(
     ftp_servers
 }
 
+async fn check_file_exists_in_cwd(ftp_stream: &mut FtpStream, name: &String) -> bool {
+    ftp_stream.size(name).await.is_ok()
+}
+
 async fn forward_files(
     files: &Vec<File>,
-    ftp_servers: &mut Vec<FtpStream>,
+    overwrite_files: bool,
+    ftp_servers: &mut Vec<Server>,
     errors: &mut Vec<String>,
 ) {
     logging::info!("Forwarding files");
@@ -151,7 +163,7 @@ async fn forward_files(
             .bytes()
             .await
             .map_err(|err| {
-                logging::warning!("Couldn't convert attached file \"{file_url}\" to bytes: {err}");
+                logging::error!("Couldn't convert attached file \"{file_url}\" to bytes: {err}");
 
                 errors.push(format!(
                     "⚠ Couldn't convert attached file \"{file_name}\" to bytes."
@@ -163,17 +175,28 @@ async fn forward_files(
 
         logging::info!("Uploading `{file_name}`");
         for server in ftp_servers.iter_mut() {
+            let server_name = &server.server_name;
+
+            if !overwrite_files && check_file_exists_in_cwd(&mut server.ftp_stream, file_name).await
+            {
+                let error =
+                    format!("File \"{file_name}\" already exists on the server \"{server_name}\"");
+
+                logging::info!("{error}");
+                errors.push(format!("⚠ {error}."));
+
+                continue;
+            }
+
             server
+                .ftp_stream
                 .put_file(file.filename.clone(), &mut reader)
                 .await
                 .map_err(|err| {
-                    logging::warning!(
-                        "Couldn't upload attached file \"{file_url}\" to a server: {err}"
-                    );
+                    let error_text = format!("Couldn't upload attached file \"{file_name}\" to the server \"{server_name}\"");
 
-                    errors.push(format!(
-                        "⚠ Couldn't upload attached file \"{file_name}\" to a server."
-                    ));
+                    logging::error!("{error_text}: {err}");
+                    errors.push(format!("⚠ {error_text}."));
                 })
                 .expect("Infallible");
         }
@@ -182,17 +205,22 @@ async fn forward_files(
     logging::info!("Files forwarded");
 }
 
-pub async fn upload_files(files: Vec<File>, servers: Vec<String>) -> Result<(), Vec<String>> {
+pub async fn upload_files(
+    files: Vec<File>,
+    servers: Vec<String>,
+    overwrite_files: bool,
+) -> Result<(), Vec<String>> {
     logging::info!("Uploading files");
 
     let mut errors = Vec::<String>::new();
 
     let mut ftp_servers = establish_ftp_connections(&servers, &mut errors).await;
 
-    forward_files(&files, &mut ftp_servers, &mut errors).await;
+    forward_files(&files, overwrite_files, &mut ftp_servers, &mut errors).await;
 
     for server in &mut ftp_servers {
         server
+            .ftp_stream
             .quit()
             .await
             .map_err(|err| logging::error!("Error closing FTP connection: {err}"))

@@ -35,6 +35,31 @@ pub fn create_command() -> discord::Command {
     .build()
 }
 
+fn create_yes_no_select(title: &str, description: &str) -> discord::Component {
+    let yes_option = discord::SelectMenuOptionBuilder::new("Yes", "Yes").build();
+
+    let no_option = discord::SelectMenuOptionBuilder::new("No", "No")
+        .default(true)
+        .build();
+
+    let select_menu =
+        discord::SelectMenuBuilder::new("yes_no_select", discord::component::SelectMenuType::Text)
+            .min_values(1)
+            .max_values(1)
+            .required(true)
+            .option(yes_option)
+            .option(no_option)
+            .build();
+
+    let label = discord::Component::Label(
+        discord::LabelBuilder::new(title, discord::Component::SelectMenu(select_menu))
+            .description(description)
+            .build(),
+    );
+
+    label
+}
+
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
@@ -98,11 +123,16 @@ pub async fn process_command(
         .build(),
     );
 
+    let overwrite_select = create_yes_no_select(
+        "Overwrite existing files?",
+        "If disabled, files with duplicate names will be skipped",
+    );
+
     let data = discord::InteractionResponseDataBuilder::new()
         .title("Upload blueprint files")
         .custom_id(MODAL_ID)
         .flags(discord::MessageFlags::IS_COMPONENTS_V2)
-        .components([server_select_label, file_upload_label])
+        .components([server_select_label, file_upload_label, overwrite_select])
         .build();
 
     let response = discord::InteractionResponse {
@@ -123,12 +153,38 @@ fn get_selected_servers(
     submitted_components: &Vec<discord::ModalInteractionComponent>,
 ) -> Result<&Vec<String>, ()> {
     for component in submitted_components {
-        if let discord::ModalInteractionComponent::Label(label) = component {
-            if let discord::ModalInteractionComponent::StringSelect(select) =
-                label.component.as_ref()
-            {
-                return Ok(&select.values);
-            }
+        let discord::ModalInteractionComponent::Label(label) = component else {
+            continue;
+        };
+
+        let discord::ModalInteractionComponent::StringSelect(select) = label.component.as_ref()
+        else {
+            continue;
+        };
+
+        if select.custom_id == "server_select" {
+            return Ok(&select.values);
+        }
+    }
+
+    Err(())
+}
+
+fn get_overwrite_selected(
+    submitted_components: &Vec<discord::ModalInteractionComponent>,
+) -> Result<bool, ()> {
+    for component in submitted_components {
+        let discord::ModalInteractionComponent::Label(label) = component else {
+            continue;
+        };
+
+        let discord::ModalInteractionComponent::StringSelect(select) = label.component.as_ref()
+        else {
+            continue;
+        };
+
+        if select.custom_id == "yes_no_select" {
+            return Ok(select.values.contains(&"Yes".to_string()));
         }
     }
 
@@ -142,6 +198,13 @@ pub async fn process_modal_submition(
 ) {
     let Ok(selected_servers) = get_selected_servers(&submit_data.components) else {
         logging::error!("Selected servers not found in the submitted components");
+        return;
+    };
+
+    let Ok(overwrite_files) = get_overwrite_selected(&submit_data.components) else {
+        logging::error!(
+            "Couldn't check if files overwriting is selected in the submitted components"
+        );
         return;
     };
 
@@ -166,6 +229,7 @@ pub async fn process_modal_submition(
             upload_files_future = Some(tokio::spawn(ftp::upload_files(
                 files,
                 selected_servers.clone(),
+                overwrite_files,
             )));
             upload_files_text = Some(text.clone());
 
