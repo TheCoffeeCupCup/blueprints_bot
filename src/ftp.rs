@@ -133,6 +133,7 @@ async fn check_file_exists_in_cwd(ftp_stream: &mut FtpStream, name: &String) -> 
     ftp_stream.size(name).await.is_ok()
 }
 
+// TODO: Make files downloading/uploading parallelized.
 async fn forward_files(
     files: &Vec<File>,
     overwrite_files: bool,
