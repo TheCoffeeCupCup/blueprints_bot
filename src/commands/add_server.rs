@@ -237,7 +237,7 @@ pub async fn process_modal_submition(
 
     if let (Some(server_name), Some(server_creds)) = (matched_server_name, matched_server_creds) {
         let connection_result =
-            ftp::establish_ftp_connection(server_name.clone(), server_creds.clone()).await;
+            ftp::establish_ftp_connection(server_name.clone(), server_creds.clone(), false).await;
 
         let updated_content = match connection_result {
             Ok(_) => {

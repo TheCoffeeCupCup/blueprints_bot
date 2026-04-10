@@ -221,6 +221,4 @@ async fn handle_interaction_create(
     }
 }
 
-// TODO: Limit the size of blueprints folder
 // TODO: Command for editing uploader's servers (as opposed to server's uploaders)
-// TODO: Docker container

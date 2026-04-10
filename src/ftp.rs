@@ -5,9 +5,13 @@ type File = commands::upload_blueprints::Attachment;
 
 const BLUEPRINTS_BASE_FOLDER: &'static str = ".config/Epic/FactoryGame/Saved/SaveGames/blueprints";
 
+// The limit here is slightly below what we discovered by experiments because the value isn't set in stone.
+const BLUEPRINTS_AMOUNT_LIMIT: usize = 600;
+
 pub async fn establish_ftp_connection(
     server_name: String,
     server_creds: bot_data::ServerCredentials,
+    check_files_amount: bool,
 ) -> Result<FtpStream, String> {
     logging::info!("Connecting to FTP \"{server_name}\"");
 
@@ -35,6 +39,31 @@ pub async fn establish_ftp_connection(
         );
         format!("Couldn't access blueprints folder on the server \"{server_name}\".")
     })?;
+
+    if check_files_amount {
+        let files_amount = ftp_stream
+        .list(None)
+        .await
+        .map(|files| files.len())
+        .map_err(|err| {
+            logging::error!("Couldn't count the files in the blueprints folder on the server \"{server_name}\": {err}");
+            format!("Couldn't count the files in the blueprints folder on the server \"{server_name}\".")
+        })?;
+
+        // Each blueprint takes two files.
+        let files_limit = BLUEPRINTS_AMOUNT_LIMIT * 2;
+
+        if files_amount > files_limit {
+            let basic_error = format!(
+                "The amount of blueprints exceeds current limit {BLUEPRINTS_AMOUNT_LIMIT} on the server \"{server_name}\""
+            );
+
+            logging::warning!("{basic_error}");
+            return Err(format!(
+                "{basic_error}. Please ask netrunners to delete some before uploading new files to the server."
+            ));
+        }
+    }
 
     logging::info!("Connected to FTP \"{server_name}\"");
 
@@ -74,7 +103,11 @@ async fn establish_ftp_connections(
             continue;
         }
 
-        ftp_servers_tasks.spawn(establish_ftp_connection(server_name.clone(), server_creds));
+        ftp_servers_tasks.spawn(establish_ftp_connection(
+            server_name.clone(),
+            server_creds,
+            true,
+        ));
     }
 
     let mut ftp_servers = Vec::<FtpStream>::new();
