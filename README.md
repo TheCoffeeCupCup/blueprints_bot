@@ -40,6 +40,7 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
     - If any problems occur while uploading the files, they will be reported in the response message.
     - It won't let to upload new files if the amount on the server exceeds a set limit.
 - Colored stdout logs and file logs in `logs` folder (automatically created in runtime).
+- Log files are automatically purged after exceeding the quantity limit.
 - Automatic backing up of the bot data for easy recovery in case of errors. If needed, must be restored before the next launch of the bot.
 - Encryption of the bot data.
 - *I think* it *probably* can *hopefully kinda* run in bloody Docker.
