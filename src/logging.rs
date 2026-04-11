@@ -1,10 +1,11 @@
 use colored::Colorize;
-use std::fs;
 use std::io::Write;
+use std::{ffi::OsStr, fs};
 
-use crate::AnyError;
+use crate::{AnyError, logging};
 
 pub static LOG_FILE: std::sync::RwLock<Option<fs::File>> = std::sync::RwLock::new(None);
+pub static LOG_FILES_AMOUNT_LIMIT: usize = 20;
 
 pub fn log(name: &str, text: &str, color: Option<colored::Color>) {
     let timestamp = chrono::Utc::now().format("%H:%M:%S%.6f");
@@ -58,7 +59,39 @@ pub use log_error as error;
 pub use log_info as info;
 pub use log_warning as warning;
 
-// TODO: Removing old logs automatically
+fn purge_old_logs() {
+    logging::info!("Purging old logs");
+
+    match std::fs::read_dir("logs") {
+        Ok(files) => {
+            let mut files: Vec<_> = files
+                .filter_map(|f| f.ok())
+                .map(|f| f.path())
+                .filter(|path| path.is_file() && path.extension() == Some(OsStr::new("log")))
+                .collect();
+
+            files.sort();
+
+            if files.len() > LOG_FILES_AMOUNT_LIMIT {
+                let remove_amount = files.len() - LOG_FILES_AMOUNT_LIMIT;
+
+                logging::info!("Removing {remove_amount} old logs");
+
+                for path in files.iter().take(remove_amount) {
+                    fs::remove_file(path)
+                        .map_err(|err| logging::error!("Couldn't remove {path:?}: {err}"))
+                        .ok();
+                }
+            } else {
+                logging::info!("Limit not exceeded, no removing needed");
+            }
+        }
+        Err(err) => {
+            logging::error!("Error reading logs directory: {err}");
+        }
+    }
+}
+
 pub fn init_log_file() -> Result<(), AnyError> {
     log_info!("Initializing file logging");
 
@@ -72,6 +105,8 @@ pub fn init_log_file() -> Result<(), AnyError> {
     *log_file_guard = Some(std::fs::File::create(log_path)?);
 
     drop(log_file_guard); // Releasing the lock
+
+    purge_old_logs();
 
     Ok(())
 }
