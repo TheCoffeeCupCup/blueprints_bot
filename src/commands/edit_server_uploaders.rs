@@ -56,7 +56,7 @@ pub async fn process_command(
             "✗ No servers have been set up yet. It can be done via the `/{}` command.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, interaction_client, &error).await;
+        discord::negative_response(interaction, &interaction_client, &error).await;
 
         return;
     }
@@ -239,40 +239,13 @@ fn create_uploaders_diff(
     )
 }
 
-async fn delete_interaction_message(
-    interaction: &discord::InteractionCreate,
-    interaction_client: &discord::InteractionClient<'_>,
-) {
-    // For whatever reason I first need to create deferred update response to delete the message.
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::DeferredUpdateMessage,
-        data: None,
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .map_err(|err| {
-            logging::error!("Couldn't send defer update response for message deletion: {err}");
-        })
-        .ok();
-
-    interaction_client
-        .delete_response(&interaction.token)
-        .await
-        .map_err(|err| {
-            logging::error!("Couldn't delete the message: {err}");
-        })
-        .ok();
-}
-
 pub async fn process_uploaders_submition(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
 ) {
     logging::info!("Processing edit uploaders submission");
 
-    delete_interaction_message(interaction, &interaction_client).await;
+    discord::delete_interaction_message(interaction, &interaction_client).await;
 
     let Some(interaction_message) = &interaction.message else {
         logging::error!("Couldn't get the message from interaction");
@@ -338,7 +311,12 @@ pub async fn process_uploaders_submition(
 fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::Component> {
     let mut components = Vec::<discord::Component>::new();
 
-    let select_menu = bot_data::create_server_select_menu(Some(1), selected_server, None);
+    let select_menu = bot_data::create_server_select_menu_custom_id(
+        Some(1),
+        selected_server,
+        None,
+        "edit_uploaders_server_select",
+    );
 
     components.push(discord::Component::ActionRow(
         discord::ActionRowBuilder::new()
@@ -364,7 +342,7 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
                 discord::ActionRowBuilder::new()
                     .component(
                         discord::SelectMenuBuilder::new(
-                            "users_list",
+                            "edit_uploaders_users_list",
                             discord::component::SelectMenuType::Mentionable,
                         )
                         .default_values(current_uploaders)

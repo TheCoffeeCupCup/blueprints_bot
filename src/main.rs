@@ -36,6 +36,7 @@ async fn main() -> Result<(), AnyError> {
                 commands::add_server::create_command(),
                 commands::remove_server::create_command(),
                 commands::edit_server_uploaders::create_command(),
+                commands::edit_uploader_servers::create_command(),
             ],
         )
         .await?;
@@ -144,6 +145,13 @@ async fn handle_interaction_create(
                     )
                     .await;
                 }
+                commands::edit_uploader_servers::COMMAND => {
+                    commands::edit_uploader_servers::process_command(
+                        &interaction,
+                        interaction_client,
+                    )
+                    .await;
+                }
                 _ => {}
             }
         }
@@ -188,8 +196,16 @@ async fn handle_interaction_create(
             logging::info!("Received message component interaction \"{component_id}\"");
 
             match component_id {
-                "server_select" => {
+                "edit_uploaders_server_select" => {
                     commands::edit_server_uploaders::process_server_select(
+                        interaction,
+                        message_component,
+                        interaction_client,
+                    )
+                    .await
+                }
+                "edit_uploaders_users_list" => {
+                    commands::edit_server_uploaders::process_users_select(
                         interaction,
                         message_component,
                         interaction_client,
@@ -203,14 +219,32 @@ async fn handle_interaction_create(
                     )
                     .await
                 }
-                "users_list" => {
-                    commands::edit_server_uploaders::process_users_select(
+
+                commands::edit_uploader_servers::USER_SELECT_ID => {
+                    commands::edit_uploader_servers::process_user_selected(
                         interaction,
                         message_component,
                         interaction_client,
                     )
                     .await
                 }
+                commands::edit_uploader_servers::SERVERS_SELECT_ID => {
+                    commands::edit_uploader_servers::process_servers_selected(
+                        interaction,
+                        message_component,
+                        interaction_client,
+                    )
+                    .await
+                }
+                commands::edit_uploader_servers::SUBMIT_BUTTON_ID => {
+                    commands::edit_uploader_servers::process_submit_clicked(
+                        interaction,
+                        message_component,
+                        interaction_client,
+                    )
+                    .await
+                }
+
                 _ => {}
             }
         }
@@ -220,5 +254,3 @@ async fn handle_interaction_create(
         }
     }
 }
-
-// TODO: Command for editing uploader's servers (as opposed to server's uploaders)

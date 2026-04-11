@@ -1,7 +1,7 @@
 use colored::Colorize as _;
 use itertools::Itertools;
 
-use crate::{ansi, bot_data, commands, discord, logging};
+use crate::{ansi, bot_data, commands, common, discord, logging};
 
 /* Constants */
 
@@ -56,7 +56,7 @@ async fn process_command_impl(
             "✗ No servers have been set up yet. It can be done via the `/{}` command.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, interaction_client, &error).await;
+        discord::negative_response(interaction, &interaction_client, &error).await;
 
         return;
     }
@@ -102,7 +102,7 @@ async fn process_modal_submition_impl(
         logging::error!("Wrong interaction structure. Sending the error message response.");
 
         let error = "✗ Unexpected error occured: the modal submit data has wrong format.";
-        discord::negative_response(interaction, interaction_client, error).await;
+        discord::negative_response(interaction, &interaction_client, error).await;
 
         return;
     };
@@ -112,7 +112,7 @@ async fn process_modal_submition_impl(
         logging::error!("Selected servers list is empty. Sending the error message response.");
 
         let error = "✗ Unexpected error occured: no servers were selected.";
-        discord::negative_response(interaction, interaction_client, error).await;
+        discord::negative_response(interaction, &interaction_client, error).await;
 
         return;
     }
@@ -140,7 +140,7 @@ async fn process_modal_submition_impl(
         response_lines.push(
             format!(
                 "✓ Succesfully removed the following servers: {}",
-                list_to_string(&removed_servers)
+                common::list_to_string(&removed_servers)
             )
             .green(),
         );
@@ -154,7 +154,7 @@ async fn process_modal_submition_impl(
         response_lines.push(
             format!(
                 "✗ Couldn't remove the following servers: {}",
-                list_to_string(&missing_servers)
+                common::list_to_string(&missing_servers)
             )
             .red(),
         );
@@ -205,8 +205,4 @@ fn unwrap_selected_servers(submit_data: &discord::ModalInteractionData) -> Optio
     }
 
     return Some(&server_select.values);
-}
-
-fn list_to_string(list: &Vec<&String>) -> String {
-    list.iter().map(|item| format!("{item:?}")).join(", ")
 }

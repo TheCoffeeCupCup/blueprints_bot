@@ -1,3 +1,5 @@
+use itertools::Itertools as _;
+
 pub mod discord {
     pub use twilight_http::Client as HttpClient;
     pub use twilight_http::client::InteractionClient;
@@ -56,7 +58,7 @@ pub mod discord {
 
     pub async fn negative_response(
         interaction: &InteractionCreate,
-        interaction_client: InteractionClient<'_>,
+        interaction_client: &InteractionClient<'_>,
         text: &str,
     ) {
         use colored::Colorize as _;
@@ -76,6 +78,35 @@ pub mod discord {
             .await
             .map_err(|err| {
                 crate::logging::error!("Couldn't send negative response \"{text}\": {err}")
+            })
+            .ok();
+    }
+
+    pub async fn delete_interaction_message(
+        interaction: &InteractionCreate,
+        interaction_client: &InteractionClient<'_>,
+    ) {
+        // For whatever reason I first need to create deferred update response to delete the message.
+        let response = InteractionResponse {
+            kind: InteractionResponseType::DeferredUpdateMessage,
+            data: None,
+        };
+
+        interaction_client
+            .create_response(interaction.id, &interaction.token, &response)
+            .await
+            .map_err(|err| {
+                crate::logging::error!(
+                    "Couldn't send defer update response for message deletion: {err}"
+                );
+            })
+            .ok();
+
+        interaction_client
+            .delete_response(&interaction.token)
+            .await
+            .map_err(|err| {
+                crate::logging::error!("Couldn't delete the message: {err}");
             })
             .ok();
     }
@@ -112,4 +143,12 @@ pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
 pub fn ansi(formatted: String) -> String {
     format!("```ansi\n{}\n```", formatted)
+}
+
+pub fn list_to_string<'a, T, I>(list: &'a T) -> String
+where
+    &'a T: IntoIterator<Item = I>,
+    I: std::fmt::Debug,
+{
+    list.into_iter().map(|item| format!("{item:?}")).join(", ")
 }

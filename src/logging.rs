@@ -58,6 +58,7 @@ pub use log_error as error;
 pub use log_info as info;
 pub use log_warning as warning;
 
+// TODO: Removing old logs automatically
 pub fn init_log_file() -> Result<(), AnyError> {
     log_info!("Initializing file logging");
 

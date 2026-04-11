@@ -80,7 +80,7 @@ pub async fn process_command(
             "✗ No servers have been set up yet. Ask netrunners to add your server or use `/{}` if you are one.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, interaction_client, &error).await;
+        discord::negative_response(interaction, &interaction_client, &error).await;
 
         return;
     }
@@ -92,7 +92,7 @@ pub async fn process_command(
             "✗ You don't have access to blueprint uploading for any server. Ask netrunners for permission or use `/{}` if you are one.",
             commands::edit_server_uploaders::COMMAND
         );
-        discord::negative_response(interaction, interaction_client, &error).await;
+        discord::negative_response(interaction, &interaction_client, &error).await;
 
         return;
     }

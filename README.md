@@ -23,15 +23,17 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
 ## Features
 - Allows admins to set up the servers and uploaders one time, afterwards server members with corresponding permissions can upload the files all they want without disturbing anyone.
 - Command `/add_server` allows to add a server by specifying name, IP, FTP credentials and session name.
-    - The permissions to run this command must be managed from Discord's server settings. By default only admins can run the command.
+    - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
     - IP is verified with a regex and a clear error message will be returned in case the IP format is wrong.
     - The bot will try to connect to the server and won't add it to the internal list in case of failure.
 - Command `/remove_server` allows to remove one or more servers from the previously set up for blueprints uploading.
-    - The permissions to run this command must be managed from Discord's server settings. By default only admins can run the command.
+    - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
 - Command `/edit_server_uploaders` allows to specify which users or roles can upload files to a specfic server.
-    - The permissions to run this command must be managed from Discord's server settings. By default only admins can run the command.
+    - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
+- Command `/edit_uploader_servers` allows to specify the list of servers a specified user or role has access to. Basically like `/edit_server_uploaders` but other way around.
+    - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
 - Command `/upload_blueprints` allows to upload blueprint files to servers.
-    - There are no default restrictions as to who can run this command. However the files can only be uploaded to the servers where the user is added as "uploader".
+    - There are **no default restrictions** as to who can run this command. However the files can only be uploaded to the servers where the user is added as "uploader".
     - Allows to upload 2-10 files (1-5 blueprints in pairs of `.sbp` and `.sbpcfg` files). 10 files is Discord's limitation that doesn't depend on a bot.
     - Allows to choose whether files with the same names on the server should be overridden.
     - Every file is individually verified by name and a clear error is returned in case of any issues.

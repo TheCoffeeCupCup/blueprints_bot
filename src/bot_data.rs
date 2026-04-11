@@ -27,7 +27,7 @@ pub fn get_server_creds(server_name: &str) -> Option<ServerCredentials> {
         .map(|s| s.credentials.clone())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum Mentionable {
     User(discord::Id<discord::marker::UserMarker>),
     Role(discord::Id<discord::marker::RoleMarker>),
@@ -219,6 +219,15 @@ pub fn create_server_select_menu(
     default_value: Option<&str>,
     issuing_user: Option<&discord::PartialMember>,
 ) -> discord::component::SelectMenu {
+    create_server_select_menu_custom_id(amount_limit, default_value, issuing_user, "server_select")
+}
+
+pub fn create_server_select_menu_custom_id(
+    amount_limit: Option<u8>,
+    default_value: Option<&str>,
+    issuing_user: Option<&discord::PartialMember>,
+    custom_id: &str,
+) -> discord::component::SelectMenu {
     let mut servers = Vec::new();
 
     for (server_name, server_data) in &bot_data::get_data().servers {
@@ -246,7 +255,7 @@ pub fn create_server_select_menu(
     }
 
     let mut select_menu =
-        discord::SelectMenuBuilder::new("server_select", discord::component::SelectMenuType::Text)
+        discord::SelectMenuBuilder::new(custom_id, discord::component::SelectMenuType::Text)
             .min_values(1)
             .required(true);
 
