@@ -2,8 +2,10 @@ use itertools::Itertools as _;
 
 pub mod discord {
     pub use twilight_http::Client as HttpClient;
+    pub use twilight_http::client::ClientBuilder;
     pub use twilight_http::client::InteractionClient;
 
+    pub use twilight_model::channel::message::AllowedMentions;
     pub use twilight_model::channel::message::Component;
     pub use twilight_model::channel::message::MessageFlags;
     pub use twilight_model::channel::message::component;

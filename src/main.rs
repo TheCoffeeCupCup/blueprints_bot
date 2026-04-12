@@ -18,9 +18,24 @@ async fn main() -> Result<(), AnyError> {
 
     let intents = discord::Intents::empty();
 
-    let token = secrets::discord_token();
-    let mut shard = discord::Shard::new(discord::ShardId::ONE, token.clone(), intents);
-    let http = std::sync::Arc::new(discord::HttpClient::new(token));
+    let mut shard;
+
+    let http;
+    {
+        let token = secrets::discord_token();
+
+        shard = discord::Shard::new(discord::ShardId::ONE, token.clone(), intents);
+
+        let client_builder = discord::ClientBuilder::new()
+            .token(token)
+            .default_allowed_mentions(discord::AllowedMentions {
+                parse: Vec::new(),
+                replied_user: true,
+                roles: Vec::new(),
+                users: Vec::new(),
+            });
+        http = std::sync::Arc::new(client_builder.build());
+    }
 
     let application_id = http.current_user_application().await?.model().await?.id;
     let target_guild_id = discord::Id::new(secrets::guild_id().parse()?);
