@@ -48,6 +48,7 @@ async fn main() -> Result<(), AnyError> {
             target_guild_id,
             &[
                 commands::upload_blueprints::create_command(),
+                commands::upload_blueprints::create_message_command(),
                 commands::add_server::create_command(),
                 commands::remove_server::create_command(),
                 commands::edit_server_uploaders::create_command(),
@@ -167,6 +168,16 @@ async fn handle_interaction_create(
                     )
                     .await;
                 }
+
+                commands::upload_blueprints::MESSAGE_COMMAND => {
+                    commands::upload_blueprints::process_message_command(
+                        &interaction,
+                        command,
+                        interaction_client,
+                    )
+                    .await;
+                }
+
                 _ => {}
             }
         }
@@ -201,7 +212,17 @@ async fn handle_interaction_create(
                     )
                     .await;
                 }
-                _ => {}
+
+                _ => {
+                    if modal_id.starts_with(commands::upload_blueprints::FROM_MESSAGE_MODAL_ID) {
+                        commands::upload_blueprints::process_from_message_modal_submition(
+                            &interaction,
+                            submit_data,
+                            interaction_client,
+                        )
+                        .await;
+                    }
+                }
             }
         }
 

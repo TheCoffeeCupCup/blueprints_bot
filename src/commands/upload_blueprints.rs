@@ -1,9 +1,17 @@
+use std::{collections::HashMap, sync::LazyLock};
+
 use colored::Colorize as _;
+use tokio::sync::Mutex;
 
 use crate::{ansi, bot_data, commands, discord, ftp, logging};
 
 pub const COMMAND: &'static str = "upload_blueprints";
+pub const MESSAGE_COMMAND: &'static str = "Upload blueprints";
 pub const MODAL_ID: &'static str = "blueprints_upload_modal";
+pub const FROM_MESSAGE_MODAL_ID: &'static str = "upload_blueprints_from_message_modal";
+
+static MODAL_ASSOCIATED_DATA: LazyLock<Mutex<HashMap<String, Vec<Attachment>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 struct Blueprint {
     pub sbp_count: u8,
@@ -19,6 +27,7 @@ impl Default for Blueprint {
     }
 }
 
+#[derive(Debug)]
 pub struct Attachment {
     pub filename: String,
     pub url: String,
@@ -33,6 +42,12 @@ pub fn create_command() -> discord::Command {
         discord::CommandType::ChatInput,
     )
     .build()
+}
+
+pub fn create_message_command() -> discord::Command {
+    logging::info!("Creating message command `{MESSAGE_COMMAND}`");
+
+    discord::CommandBuilder::new(MESSAGE_COMMAND, "", discord::CommandType::Message).build()
 }
 
 fn create_yes_no_select(title: &str, description: &str) -> discord::Component {
@@ -60,13 +75,29 @@ fn create_yes_no_select(title: &str, description: &str) -> discord::Component {
     label
 }
 
-pub async fn process_command(
+fn get_next_modal_id() -> String {
+    let mut number = 0;
+
+    bot_data::update_data(|bot_data| {
+        number = bot_data.next_component_id;
+
+        // After u64::MAX is reached the counter will restart with 0.
+        bot_data.next_component_id = bot_data.next_component_id.wrapping_add(1);
+    });
+
+    format!("{FROM_MESSAGE_MODAL_ID}:{number}")
+}
+
+async fn create_modal_components(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
-) {
+    interaction_client: &discord::InteractionClient<'_>,
+    show_file_uploader: bool,
+) -> Option<Vec<discord::Component>> {
+    let mut components = Vec::new();
+
     let Some(issuing_user) = interaction.member.as_ref() else {
         logging::error!("Couldn't resolve the member issuing upload blueprints command");
-        return;
+        return None;
     };
 
     let select_menu = bot_data::create_server_select_menu(None, None, Some(issuing_user));
@@ -82,7 +113,7 @@ pub async fn process_command(
         );
         discord::negative_response(interaction, &interaction_client, &error).await;
 
-        return;
+        return None;
     }
 
     if select_menu.options.iter().len() == 0 {
@@ -94,7 +125,7 @@ pub async fn process_command(
         );
         discord::negative_response(interaction, &interaction_client, &error).await;
 
-        return;
+        return None;
     }
 
     let server_select_label = discord::Component::Label(
@@ -106,33 +137,56 @@ pub async fn process_command(
         .build(),
     );
 
-    let file_upload_label = discord::Component::Label(
-        discord::LabelBuilder::new(
-            "Files to upload",
-            discord::Component::FileUpload(
-                discord::FileUploadBuilder::new("blueprints_upload")
-                    .min_values(2)
-                    .max_values(10)
-                    .required(true)
-                    .build(),
-            ),
-        )
-        .description(
-            "You can send 1-5 blueprints, each consisting of a pair of .sbp and .sbpcfg files.",
-        )
-        .build(),
-    );
+    components.push(server_select_label);
+
+    if show_file_uploader {
+        let file_upload_label = discord::Component::Label(
+            discord::LabelBuilder::new(
+                "Files to upload",
+                discord::Component::FileUpload(
+                    discord::FileUploadBuilder::new("blueprints_upload")
+                        .min_values(2)
+                        .max_values(10)
+                        .required(true)
+                        .build(),
+                ),
+            )
+            .description(
+                "You can send 1-5 blueprints, each consisting of a pair of .sbp and .sbpcfg files.",
+            )
+            .build(),
+        );
+
+        components.push(file_upload_label);
+    }
 
     let overwrite_select = create_yes_no_select(
         "Overwrite existing files?",
         "If disabled, files with duplicate names will be skipped",
     );
 
+    components.push(overwrite_select);
+
+    Some(components)
+}
+
+pub async fn display_modal(
+    modal_id: &str,
+    show_file_uploader: bool,
+    interaction: &discord::InteractionCreate,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    let Some(components) =
+        create_modal_components(interaction, &interaction_client, show_file_uploader).await
+    else {
+        return;
+    };
+
     let data = discord::InteractionResponseDataBuilder::new()
         .title("Upload blueprint files")
-        .custom_id(MODAL_ID)
+        .custom_id(modal_id)
         .flags(discord::MessageFlags::IS_COMPONENTS_V2)
-        .components([server_select_label, file_upload_label, overwrite_select])
+        .components(components)
         .build();
 
     let response = discord::InteractionResponse {
@@ -147,6 +201,77 @@ pub async fn process_command(
             logging::error!("Couldn't display the upload blueprints modal: {err}");
         })
         .ok();
+}
+
+pub async fn process_command(
+    interaction: &discord::InteractionCreate,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    display_modal(MODAL_ID, true, interaction, interaction_client).await;
+}
+
+fn get_all_attachments(
+    command_data: &discord::CommandData,
+) -> Result<Vec<&discord::Attachment>, String> {
+    let Some(resolved_data) = command_data.resolved.as_ref() else {
+        return Err(format!(
+            "Couldn't get resolved_data from the message command interaction data"
+        ));
+    };
+
+    let mut all_attachments: Vec<&discord::Attachment> = Vec::new();
+
+    for (_message_id, message) in &resolved_data.messages {
+        all_attachments.extend(message.attachments.iter());
+
+        for snapshot in &message.message_snapshots {
+            all_attachments.extend(snapshot.message.attachments.iter());
+        }
+    }
+
+    Ok(all_attachments)
+}
+
+pub async fn process_message_command(
+    interaction: &discord::InteractionCreate,
+    command_data: &discord::CommandData,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    let modal_id = get_next_modal_id();
+
+    let all_attachments: Vec<Attachment> = match get_all_attachments(command_data) {
+        Ok(all_attachments) => all_attachments
+            .iter()
+            .map(|attachment| Attachment {
+                filename: attachment.filename.clone(),
+                url: attachment.url.clone(),
+            })
+            .collect(),
+        Err(err) => {
+            logging::error!(
+                "Couldn't retrieve the attachments from the message command data: {err}"
+            );
+            return;
+        }
+    };
+
+    if all_attachments.len() == 0 {
+        logging::info!("`{MESSAGE_COMMAND}` message command used on a message with no attachments");
+
+        let error = format!(
+            "✗ The selected message must have attached files to use this command but none detected."
+        );
+        discord::negative_response(interaction, &interaction_client, &error).await;
+
+        return;
+    }
+
+    MODAL_ASSOCIATED_DATA
+        .lock()
+        .await
+        .insert(modal_id.clone(), all_attachments);
+
+    display_modal(&modal_id, false, interaction, interaction_client).await;
 }
 
 fn get_selected_servers(
@@ -191,7 +316,8 @@ fn get_overwrite_selected(
     Err(())
 }
 
-pub async fn process_modal_submition(
+async fn send_files(
+    mut files: Vec<Attachment>,
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
@@ -207,17 +333,6 @@ pub async fn process_modal_submition(
         );
         return;
     };
-
-    let mut files = Vec::<Attachment>::new();
-
-    if let Some(resolved) = &submit_data.resolved {
-        for (_, file) in &resolved.attachments {
-            files.push(Attachment {
-                filename: file.filename.clone(),
-                url: file.url.clone(),
-            });
-        }
-    }
 
     files.sort_by_cached_key(|f| f.filename.clone());
 
@@ -288,6 +403,50 @@ pub async fn process_modal_submition(
             })
             .ok();
     }
+}
+
+pub async fn process_modal_submition(
+    interaction: &discord::InteractionCreate,
+    submit_data: &discord::ModalInteractionData,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    let mut files = Vec::<Attachment>::new();
+
+    if let Some(resolved) = &submit_data.resolved {
+        for (_, file) in &resolved.attachments {
+            files.push(Attachment {
+                filename: file.filename.clone(),
+                url: file.url.clone(),
+            });
+        }
+    }
+
+    send_files(files, interaction, submit_data, interaction_client).await;
+}
+
+pub async fn process_from_message_modal_submition(
+    interaction: &discord::InteractionCreate,
+    submit_data: &discord::ModalInteractionData,
+    interaction_client: discord::InteractionClient<'_>,
+) {
+    let Some(files) = MODAL_ASSOCIATED_DATA
+        .lock()
+        .await
+        .remove(&submit_data.custom_id)
+    else {
+        logging::error!(
+            "Couldn't retrieve modal associated data for `{}`",
+            submit_data.custom_id
+        );
+
+        let error =
+            format!("✗ Couldn't retrieve the neccessary data associated with this interaction.");
+        discord::negative_response(interaction, &interaction_client, &error).await;
+
+        return;
+    };
+
+    send_files(files, interaction, submit_data, interaction_client).await;
 }
 
 fn verify_blueprints(

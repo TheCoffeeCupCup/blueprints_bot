@@ -44,3 +44,4 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
 - Automatic backing up of the bot data for easy recovery in case of errors. If needed, must be restored before the next launch of the bot.
 - Encryption of the bot data.
 - *I think* it *probably* can *hopefully kinda* run in bloody Docker.
+- Uploading attached blueprint files via message's context menu

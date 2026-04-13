@@ -5,6 +5,8 @@ pub mod discord {
     pub use twilight_http::client::ClientBuilder;
     pub use twilight_http::client::InteractionClient;
 
+    pub use twilight_model::channel::Attachment;
+
     pub use twilight_model::channel::message::AllowedMentions;
     pub use twilight_model::channel::message::Component;
     pub use twilight_model::channel::message::MessageFlags;
@@ -24,6 +26,8 @@ pub mod discord {
     pub use twilight_model::application::interaction::modal::ModalInteractionData;
 
     pub use twilight_model::application::interaction::message_component::MessageComponentInteractionData;
+
+    pub use twilight_model::application::interaction::application_command::CommandData;
 
     pub use twilight_model::id::Id;
     pub use twilight_model::id::marker;

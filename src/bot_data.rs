@@ -83,6 +83,9 @@ impl Server {
 #[derive(Default, Debug, Serialize, Deserialize)]
 pub struct BotData {
     pub servers: std::collections::HashMap<String, Server>,
+
+    #[serde(default)]
+    pub next_component_id: u64,
 }
 
 ///////////////////////////////////////////////////
