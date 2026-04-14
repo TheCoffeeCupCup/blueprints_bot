@@ -2,6 +2,11 @@
 
 FROM rust:1.94-slim-bookworm AS builder
 
+# Needed for git tag displaying in the bot
+RUN apt-get update \
+    && apt-get install -y git \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /usr/src/app
 COPY . .
 
