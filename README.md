@@ -39,6 +39,8 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
     - Every file is individually verified by name and a clear error is returned in case of any issues.
     - If any problems occur while uploading the files, they will be reported in the response message.
     - It won't let to upload new files if the amount on the server exceeds a set limit.
+- Command `/version` allows to see the current version and git tag of the running bot.
+    - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
 - Colored stdout logs and file logs in `logs` folder (automatically created in runtime).
 - Log files are automatically purged after exceeding the quantity limit.
 - Automatic backing up of the bot data for easy recovery in case of errors. If needed, must be restored before the next launch of the bot.

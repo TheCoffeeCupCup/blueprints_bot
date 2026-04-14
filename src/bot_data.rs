@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{bot_data, discord, encryption, logging, secrets};
 
+pub const CARGO_PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const GIT_TAG: &'static str = env!("GIT_TAG");
+
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
 pub enum ConnectionType {
     FTP,

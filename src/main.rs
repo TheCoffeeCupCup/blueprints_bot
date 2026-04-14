@@ -16,6 +16,9 @@ async fn main() -> Result<(), AnyError> {
     logging::init_log_file()?;
     log_info!("Initialized file logging");
 
+    logging::info!("CARGO_PKG_VERSION: {}", bot_data::CARGO_PKG_VERSION);
+    logging::info!("GIT_TAG: {}", bot_data::GIT_TAG);
+
     let intents = discord::Intents::empty();
 
     let mut shard;
@@ -53,6 +56,7 @@ async fn main() -> Result<(), AnyError> {
                 commands::remove_server::create_command(),
                 commands::edit_server_uploaders::create_command(),
                 commands::edit_uploader_servers::create_command(),
+                commands::version::create_command(),
             ],
         )
         .await?;
@@ -167,6 +171,9 @@ async fn handle_interaction_create(
                         interaction_client,
                     )
                     .await;
+                }
+                commands::version::COMMAND => {
+                    commands::version::process_command(&interaction, interaction_client).await;
                 }
 
                 commands::upload_blueprints::MESSAGE_COMMAND => {
