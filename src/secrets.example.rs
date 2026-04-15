@@ -1,4 +1,4 @@
-// Copy this file into secrets.rs and replace placeholders with real values before building the executable.
+// Copy this file into secrets.rs and then replace "" with real values before building the executable.
 
 use crate::secret;
 
