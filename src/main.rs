@@ -13,6 +13,9 @@ use common::{AnyError, ansi, discord};
 
 #[tokio::main]
 async fn main() -> Result<(), AnyError> {
+    // Required for displaying colors in Discord messages that use ansi code block trick.
+    colored::control::set_override(true);
+
     logging::init_log_file()?;
     log_info!("Initialized file logging");
 

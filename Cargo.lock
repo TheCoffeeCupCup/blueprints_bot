@@ -172,7 +172,7 @@ dependencies = [
 
 [[package]]
 name = "ccs_discord_bot"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "aes-gcm",
  "chrono",
