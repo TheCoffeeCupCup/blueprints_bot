@@ -5,6 +5,7 @@ use std::{
 
 use colored::Colorize as _;
 use tokio::sync::{MappedMutexGuard, Mutex, MutexGuard};
+use twilight_util::builder::message::TextDisplayBuilder;
 
 use crate::{
     bot_data, commands,
@@ -27,9 +28,8 @@ pub const USER_SELECT_ID: &'static str = concat!(command!(), "/user_select");
 pub const SERVERS_SELECT_ID: &'static str = concat!(command!(), "/servers_select");
 pub const SUBMIT_BUTTON_ID: &'static str = concat!(command!(), "/submit");
 
-static ACTIVE_FORMS: LazyLock<
-    Mutex<HashMap<discord::Id<discord::marker::MessageMarker>, MessageFormData>>,
-> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_FORMS: LazyLock<Mutex<HashMap<discord::MessageId, MessageFormData>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /* Interface functions */
 
@@ -98,7 +98,7 @@ async fn process_command_impl(
 
     let response = interaction_client
         .create_followup(&interaction.token)
-        .components(construct_message_components(&None).as_slice())
+        .components(construct_message_components(None, None).as_slice())
         .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
         .await
         .map_err(|err| logging::error!("Couldn't send the followup: {err}"));
@@ -137,11 +137,17 @@ async fn process_user_selected_impl(
         return;
     };
 
+    let mut selected_user_roles: Option<Vec<discord::RoleId>> = None;
+
     if let Some(selected_mentionables) = interaction_data.resolved.as_ref() {
         let selected_mentionables_amount =
             selected_mentionables.users.len() + selected_mentionables.roles.len();
 
         if selected_mentionables_amount == 1 {
+            for member in selected_mentionables.members.values() {
+                selected_user_roles = Some(member.roles.clone());
+            }
+
             for user_id in selected_mentionables.users.keys() {
                 form_data.selected_mentionable = Some(bot_data::Mentionable::User(*user_id));
             }
@@ -156,7 +162,10 @@ async fn process_user_selected_impl(
         }
     }
 
-    let components = construct_message_components(&form_data.selected_mentionable);
+    let components = construct_message_components(
+        form_data.selected_mentionable.as_ref(),
+        selected_user_roles.as_ref(),
+    );
 
     let data = discord::InteractionResponseDataBuilder::new()
         .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
@@ -364,23 +373,31 @@ async fn send_placeholder_message(
 /* Main message components */
 
 fn construct_message_components(
-    selected_user: &Option<bot_data::Mentionable>,
+    selected_mentionable: Option<&bot_data::Mentionable>,
+    selected_user_roles: Option<&Vec<discord::RoleId>>,
 ) -> Vec<discord::Component> {
     logging::info!("Constructing `/{COMMAND}` main message components");
 
     let mut components = Vec::<discord::Component>::new();
 
-    components.push(make_user_select(&selected_user));
+    components.push(make_user_select(selected_mentionable));
 
-    if let Some(selected_user) = selected_user.as_ref() {
-        components.push(make_server_select(selected_user));
+    if let Some(selected_user) = selected_mentionable.as_ref() {
+        let (server_select, servers_via_roles) =
+            make_server_select(selected_user, selected_user_roles);
+
+        components.push(server_select);
+        if let Some(servers_via_roles) = servers_via_roles {
+            components.push(servers_via_roles);
+        }
+
         components.push(make_submit_button());
     }
 
     components
 }
 
-fn make_user_select(selected_user: &Option<bot_data::Mentionable>) -> discord::Component {
+fn make_user_select(selected_user: Option<&bot_data::Mentionable>) -> discord::Component {
     let mut user_select = discord::SelectMenuBuilder::new(
         USER_SELECT_ID,
         discord::component::SelectMenuType::Mentionable,
@@ -414,7 +431,10 @@ fn make_user_select(selected_user: &Option<bot_data::Mentionable>) -> discord::C
     user_select_action_row
 }
 
-fn make_server_select(selected_uploader: &bot_data::Mentionable) -> discord::Component {
+fn make_server_select(
+    selected_uploader: &bot_data::Mentionable,
+    selected_user_roles: Option<&Vec<discord::RoleId>>,
+) -> (discord::Component, Option<discord::Component>) {
     let mut servers_amount = 0u8;
 
     let mut select_builder = discord::SelectMenuBuilder::new(
@@ -423,11 +443,25 @@ fn make_server_select(selected_uploader: &bot_data::Mentionable) -> discord::Com
     )
     .min_values(0);
 
-    for (server_name, server_data) in &bot_data::get_data().servers {
+    let bot_data = bot_data::get_data();
+
+    let mut servers_via_roles = Vec::new();
+
+    for (server_name, server_data) in &bot_data.servers {
         let mut option = discord::SelectMenuOptionBuilder::new(server_name, server_name).build();
 
-        if server_data.uploaders.contains(selected_uploader) {
-            option.default = true;
+        for uploader in &server_data.uploaders {
+            if uploader == selected_uploader {
+                option.default = true;
+            }
+
+            if let Some(selected_user_roles) = selected_user_roles {
+                if let bot_data::Mentionable::Role(uploader_role) = uploader {
+                    if selected_user_roles.contains(uploader_role) {
+                        servers_via_roles.push(server_name);
+                    }
+                }
+            }
         }
 
         select_builder = select_builder.option(option);
@@ -443,7 +477,23 @@ fn make_server_select(selected_uploader: &bot_data::Mentionable) -> discord::Com
             .build(),
     );
 
-    server_select_action_row
+    let mut servers_via_roles_component = None;
+
+    if servers_via_roles.len() > 0 {
+        let servers_via_roles = common::list_to_string(&servers_via_roles);
+
+        let text = common::ansi(
+            format!("⚠ Servers accessible via roles: {servers_via_roles}.")
+                .yellow()
+                .to_string(),
+        );
+
+        servers_via_roles_component = Some(discord::Component::TextDisplay(
+            TextDisplayBuilder::new(text).build(),
+        ));
+    }
+
+    (server_select_action_row, servers_via_roles_component)
 }
 
 fn make_submit_button() -> discord::Component {

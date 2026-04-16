@@ -32,6 +32,11 @@ pub mod discord {
     pub use twilight_model::id::Id;
     pub use twilight_model::id::marker;
 
+    pub type UserId = Id<marker::UserMarker>;
+    pub type RoleId = Id<marker::RoleMarker>;
+    pub type GuildId = Id<marker::GuildMarker>;
+    pub type MessageId = Id<marker::MessageMarker>;
+
     pub use twilight_model::guild::PartialMember;
     pub use twilight_model::guild::Permissions;
 

@@ -39,9 +39,8 @@ impl MessageFormData {
     }
 }
 
-static ACTIVE_FORMS: LazyLock<
-    Mutex<HashMap<discord::Id<discord::marker::MessageMarker>, MessageFormData>>,
-> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_FORMS: LazyLock<Mutex<HashMap<discord::MessageId, MessageFormData>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,

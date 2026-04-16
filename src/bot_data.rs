@@ -32,8 +32,8 @@ pub fn get_server_creds(server_name: &str) -> Option<ServerCredentials> {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum Mentionable {
-    User(discord::Id<discord::marker::UserMarker>),
-    Role(discord::Id<discord::marker::RoleMarker>),
+    User(discord::UserId),
+    Role(discord::RoleId),
 }
 
 impl Mentionable {

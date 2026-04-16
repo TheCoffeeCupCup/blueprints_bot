@@ -84,7 +84,7 @@ async fn main() -> Result<(), AnyError> {
 async fn handle_event(
     event: discord::Event,
     http: std::sync::Arc<discord::HttpClient>,
-    target_guild_id: discord::Id<discord::marker::GuildMarker>,
+    target_guild_id: discord::GuildId,
 ) {
     // If event type is undesired we ignore it without logging any warnings.
     let discord::Event::InteractionCreate(interaction) = &event else {
