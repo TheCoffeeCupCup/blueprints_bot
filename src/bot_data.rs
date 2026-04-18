@@ -277,3 +277,49 @@ pub fn create_server_select_menu_custom_id(
 
     select_menu.build()
 }
+
+pub async fn get_git_version_status(current_version: &str) -> String {
+    const REPO_NAME: &'static str = "TheCoffeeCupCup/blueprints_bot";
+    let repo_url = format!("https://api.github.com/repos/{REPO_NAME}/commits/main");
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&repo_url)
+        // GitHub requires a User-Agent
+        .header(reqwest::header::USER_AGENT, "rust-reqwest-client")
+        // Will return only the commit SHA string
+        .header(reqwest::header::ACCEPT, "application/vnd.github.sha")
+        .send()
+        .await;
+
+    let error_text = "couldn't check latest version".to_string();
+
+    let Ok(response) = response
+        .map_err(|err| logging::error!("Error retrieving latest commit hash from GitHub: {err}"))
+    else {
+        return error_text;
+    };
+
+    let Ok(remote_hash) = response
+        .text()
+        .await
+        .map_err(|err| logging::error!("Error retrieving latest commit hash from GitHub: {err}"))
+    else {
+        return error_text;
+    };
+
+    let current_version = current_version
+        .strip_suffix("-dirty")
+        .unwrap_or(current_version);
+
+    let short_hash_size = current_version.len();
+    let short_hash = &remote_hash[..short_hash_size];
+
+    if current_version == short_hash {
+        logging::info!("Bot is up-to-date");
+        format!("up-to-date")
+    } else {
+        logging::warning!("Bot is outdated. Current: `{current_version}`. Latest: `{remote_hash}`");
+        format!("outdated - latest is `{remote_hash}`")
+    }
+}

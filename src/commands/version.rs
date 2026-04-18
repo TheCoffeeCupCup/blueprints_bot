@@ -34,7 +34,8 @@ async fn process_command_impl(
     interaction_client: discord::InteractionClient<'_>,
 ) {
     let bot_version = format!("Bot version: `{}`", bot_data::CARGO_PKG_VERSION);
-    let git_tag = format!("Git tag: `{}`", bot_data::GIT_TAG);
+    let version_status = bot_data::get_git_version_status(bot_data::GIT_TAG).await;
+    let git_tag = format!("Git tag: `{}` ({version_status})", bot_data::GIT_TAG);
 
     let data = discord::InteractionResponseDataBuilder::new()
         .content(format!("{bot_version}\n{git_tag}"))

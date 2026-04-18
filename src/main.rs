@@ -21,6 +21,7 @@ async fn main() -> Result<(), AnyError> {
 
     logging::info!("CARGO_PKG_VERSION: {}", bot_data::CARGO_PKG_VERSION);
     logging::info!("GIT_TAG: {}", bot_data::GIT_TAG);
+    bot_data::get_git_version_status(bot_data::GIT_TAG).await;
 
     let intents = discord::Intents::empty();
 
