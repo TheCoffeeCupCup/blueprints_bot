@@ -172,8 +172,6 @@ async fn forward_files(
             })
             .expect("Infallible");
 
-        let mut reader = std::io::Cursor::new(bytes);
-
         logging::info!("Uploading `{file_name}`");
         for server in ftp_servers.iter_mut() {
             let server_name = &server.server_name;
@@ -188,6 +186,8 @@ async fn forward_files(
 
                 continue;
             }
+
+            let mut reader = std::io::Cursor::new(&bytes);
 
             server
                 .ftp_stream
