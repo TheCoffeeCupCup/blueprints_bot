@@ -61,7 +61,7 @@ pub async fn process_command(
     }
 
     let data = discord::InteractionResponseDataBuilder::new()
-        .content("Waiting for settings submition...")
+        .content("Waiting for settings submission...")
         .build();
 
     let response = discord::InteractionResponse {
@@ -238,7 +238,7 @@ fn create_uploaders_diff(
     )
 }
 
-pub async fn process_uploaders_submition(
+pub async fn process_uploaders_submission(
     interaction: &discord::InteractionCreate,
     interaction_client: discord::InteractionClient<'_>,
 ) {

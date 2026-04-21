@@ -31,13 +31,13 @@ pub async fn process_command(
     logging::info!("Finished processing command `/{COMMAND}`");
 }
 
-pub async fn process_modal_submition(
+pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
 ) {
     logging::info!("Processing modal `{MODAL_ID}`");
-    process_modal_submition_impl(interaction, submit_data, interaction_client).await;
+    process_modal_submission_impl(interaction, submit_data, interaction_client).await;
     logging::info!("Finished processing modal `{MODAL_ID}`");
 }
 
@@ -93,7 +93,7 @@ async fn process_command_impl(
         .ok();
 }
 
-async fn process_modal_submition_impl(
+async fn process_modal_submission_impl(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
@@ -101,7 +101,7 @@ async fn process_modal_submition_impl(
     let Some(selected_servers) = unwrap_selected_servers(submit_data) else {
         logging::error!("Wrong interaction structure. Sending the error message response.");
 
-        let error = "✗ Unexpected error occured: the modal submit data has wrong format.";
+        let error = "✗ Unexpected error occurred: the modal submit data has wrong format.";
         discord::negative_response(interaction, &interaction_client, error).await;
 
         return;
@@ -111,7 +111,7 @@ async fn process_modal_submition_impl(
     if selected_servers.is_empty() {
         logging::error!("Selected servers list is empty. Sending the error message response.");
 
-        let error = "✗ Unexpected error occured: no servers were selected.";
+        let error = "✗ Unexpected error occurred: no servers were selected.";
         discord::negative_response(interaction, &interaction_client, error).await;
 
         return;
@@ -139,7 +139,7 @@ async fn process_modal_submition_impl(
     if !removed_servers.is_empty() {
         response_lines.push(
             format!(
-                "✓ Succesfully removed the following servers: {}",
+                "✓ Successfully removed the following servers: {}",
                 common::list_to_string(&removed_servers)
             )
             .green(),

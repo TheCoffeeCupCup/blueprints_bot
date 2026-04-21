@@ -196,11 +196,11 @@ async fn handle_interaction_create(
         Some(discord::InteractionData::ModalSubmit(submit_data)) => {
             let modal_id = submit_data.custom_id.as_str();
 
-            logging::info!("Received modal submition \"{modal_id}\"");
+            logging::info!("Received modal submission \"{modal_id}\"");
 
             match modal_id {
                 commands::upload_blueprints::MODAL_ID => {
-                    commands::upload_blueprints::process_modal_submition(
+                    commands::upload_blueprints::process_modal_submission(
                         &interaction,
                         submit_data,
                         interaction_client,
@@ -208,7 +208,7 @@ async fn handle_interaction_create(
                     .await;
                 }
                 commands::add_server::MODAL_ID => {
-                    commands::add_server::process_modal_submition(
+                    commands::add_server::process_modal_submission(
                         &interaction,
                         submit_data,
                         interaction_client,
@@ -216,7 +216,7 @@ async fn handle_interaction_create(
                     .await;
                 }
                 commands::remove_server::MODAL_ID => {
-                    commands::remove_server::process_modal_submition(
+                    commands::remove_server::process_modal_submission(
                         &interaction,
                         submit_data,
                         interaction_client,
@@ -226,7 +226,7 @@ async fn handle_interaction_create(
 
                 _ => {
                     if modal_id.starts_with(commands::upload_blueprints::FROM_MESSAGE_MODAL_ID) {
-                        commands::upload_blueprints::process_from_message_modal_submition(
+                        commands::upload_blueprints::process_from_message_modal_submission(
                             &interaction,
                             submit_data,
                             interaction_client,
@@ -260,7 +260,7 @@ async fn handle_interaction_create(
                     .await
                 }
                 "confirm_edit_uploaders" => {
-                    commands::edit_server_uploaders::process_uploaders_submition(
+                    commands::edit_server_uploaders::process_uploaders_submission(
                         interaction,
                         interaction_client,
                     )

@@ -351,7 +351,7 @@ async fn send_placeholder_message(
     interaction_client: &discord::InteractionClient<'_>,
 ) {
     let data = discord::InteractionResponseDataBuilder::new()
-        .content("Waiting for settings submition...")
+        .content("Waiting for settings submission...")
         .build();
 
     let response = discord::InteractionResponse {
@@ -538,13 +538,13 @@ async fn get_relevant_form_data(
 
     if !mutex_guard.contains_key(&interaction_message.id) {
         logging::error!(
-            "Couldn't find form data corresponding to the recieved `{interaction_id}` interaction"
+            "Couldn't find form data corresponding to the received `{interaction_id}` interaction"
         );
 
         discord::negative_response(
             interaction,
             &interaction_client,
-            &format!("✗ Couldn't find form data corresponding to the recieved interaction."),
+            &format!("✗ Couldn't find form data corresponding to the received interaction."),
         )
         .await;
 

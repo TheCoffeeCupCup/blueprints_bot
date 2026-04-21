@@ -186,7 +186,7 @@ impl<'a> ServerCredentialsModalData<'a> {
     }
 }
 
-pub async fn process_modal_submition(
+pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
@@ -229,7 +229,7 @@ pub async fn process_modal_submition(
         .create_response(interaction.id, &interaction.token, &response)
         .await
         .map_err(|err| {
-            logging::error!("Couldnt't send response to add_server modal submission: {err}");
+            logging::error!("Couldn't send response to add_server modal submission: {err}");
         })
         .ok();
 
@@ -273,7 +273,7 @@ pub async fn process_modal_submition(
             .await
             .map_err(|err| {
                 logging::error!(
-                    "Couldnt't send updated response to add_server modal submission: {err}"
+                    "Couldn't send updated response to add_server modal submission: {err}"
                 );
             })
             .ok();

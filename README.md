@@ -32,7 +32,7 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
     - The bot will try to connect to the server and won't add it to the internal list in case of failure.
 - Command `/remove_server` allows to remove one or more servers from the previously set up for blueprints uploading.
     - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
-- Command `/edit_server_uploaders` allows to specify which users or roles can upload files to a specfic server.
+- Command `/edit_server_uploaders` allows to specify which users or roles can upload files to a specific server.
     - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
 - Command `/edit_uploader_servers` allows to specify the list of servers a specified user or role has access to. Basically like `/edit_server_uploaders` but other way around.
     - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.

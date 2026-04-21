@@ -417,7 +417,7 @@ async fn send_files(
     }
 }
 
-pub async fn process_modal_submition(
+pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
@@ -436,7 +436,7 @@ pub async fn process_modal_submition(
     send_files(files, interaction, submit_data, interaction_client).await;
 }
 
-pub async fn process_from_message_modal_submition(
+pub async fn process_from_message_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
     interaction_client: discord::InteractionClient<'_>,
@@ -452,7 +452,7 @@ pub async fn process_from_message_modal_submition(
         );
 
         let error =
-            format!("✗ Couldn't retrieve the neccessary data associated with this interaction.");
+            format!("✗ Couldn't retrieve the necessary data associated with this interaction.");
         discord::negative_response(interaction, &interaction_client, &error).await;
 
         return;
