@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use colored::Colorize as _;
+use itertools::Itertools as _;
 use tokio::sync::Mutex;
 
 use crate::{ansi, bot_data, commands, discord, ftp, logging};
@@ -341,6 +342,12 @@ async fn send_files(
 
     let response_data = match verify_blueprints(&files, selected_servers) {
         Ok(text) => {
+            logging::info!(
+                "Uploading blueprints {:?} to servers {:?}",
+                files.iter().map(|f| &f.filename).collect::<Vec<_>>(),
+                selected_servers
+            );
+
             upload_files_future = Some(tokio::spawn(ftp::upload_files(
                 files,
                 selected_servers.clone(),
@@ -383,7 +390,12 @@ async fn send_files(
         match upload_files_future.await {
             Ok(upload_files_result) => {
                 if let Err(err) = upload_files_result {
-                    errors_list = format!("\n\n{}", &err.join("\n")).red().to_string();
+                    errors_list = format!(
+                        "\n\n{}",
+                        &err.iter().map(|err| format!("⚠ {err}.")).join("\n")
+                    )
+                    .red()
+                    .to_string();
                 }
             }
             Err(err) => {

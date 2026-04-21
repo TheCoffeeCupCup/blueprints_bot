@@ -163,3 +163,7 @@ where
 {
     list.into_iter().map(|item| format!("{item:?}")).join(", ")
 }
+
+pub fn file_size_to_string(bytes: usize) -> String {
+    humansize::format_size(bytes, humansize::BINARY)
+}

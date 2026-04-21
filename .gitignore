@@ -1,8 +1,14 @@
+# Editors
+.vscode
+
+# Build artifacts
 /target
 
+# Secrets
 .env
 src/secrets.rs
 
+# Bot data
 bot_data.bin
 bot_data_backup.bin
 logs/
