@@ -10,7 +10,8 @@ use twilight_util::builder::message::TextDisplayBuilder;
 use crate::{
     bot_data, commands,
     common::{self, discord},
-    logging,
+    discord_utils,
+    logging::{self, LogError as _},
 };
 
 /* Constants */
@@ -47,40 +48,40 @@ pub fn create_command() -> discord::Command {
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing command `/{COMMAND}`");
-    process_command_impl(interaction, interaction_client).await;
+    process_command_impl(interaction, http_client).await;
     logging::info!("Finished processing command `/{COMMAND}`");
 }
 
 pub async fn process_user_selected(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing `{USER_SELECT_ID}` interaction");
-    process_user_selected_impl(interaction, interaction_data, interaction_client).await;
+    process_user_selected_impl(interaction, interaction_data, http_client).await;
     logging::info!("Finished processing `{USER_SELECT_ID}` interaction");
 }
 
 pub async fn process_servers_selected(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing `{SERVERS_SELECT_ID}` interaction");
-    process_servers_selected_impl(interaction, interaction_data, interaction_client).await;
+    process_servers_selected_impl(interaction, interaction_data, http_client).await;
     logging::info!("Finished processing `{SERVERS_SELECT_ID}` interaction");
 }
 
 pub async fn process_submit_clicked(
     interaction: &discord::InteractionCreate,
     _interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing `{SUBMIT_BUTTON_ID}` interaction");
-    process_submit_clicked_impl(interaction, interaction_client).await;
+    process_submit_clicked_impl(interaction, http_client).await;
     logging::info!("Finished processing `{SUBMIT_BUTTON_ID}` interaction");
 }
 
@@ -88,27 +89,32 @@ pub async fn process_submit_clicked(
 
 async fn process_command_impl(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
-    if reject_wrong_servers_amount(interaction, &interaction_client).await {
+    if reject_wrong_servers_amount(interaction, http_client).await {
         return;
     };
 
-    send_placeholder_message(interaction, &interaction_client).await;
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_message(discord_utils::Message::text(
+            "Waiting for settings submission...",
+        ))
+        .await
+        .log_error();
 
-    let response = interaction_client
-        .create_followup(&interaction.token)
-        .components(construct_message_components(None, None).as_slice())
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
+    let response = discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_followup_message(
+            discord_utils::Message::components(construct_message_components(None, None))
+                .ephemeral(),
+        )
         .await
         .map_err(|err| logging::error!("Couldn't send the followup: {err}"));
 
-    let Some(response) = response.ok() else {
-        interaction_client
-            .delete_response(&interaction.token)
+    let Ok(response) = response else {
+        discord_utils::InteractionResponse::new(interaction, http_client)
+            .delete_message()
             .await
-            .map_err(|err| logging::error!("Couldn't delete the placeholder message: {err}"))
-            .ok();
+            .log_error();
 
         return;
     };
@@ -129,10 +135,10 @@ async fn process_command_impl(
 async fn process_user_selected_impl(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Some(mut form_data) =
-        get_relevant_form_data(USER_SELECT_ID, interaction, &interaction_client).await
+        get_relevant_form_data(USER_SELECT_ID, interaction, http_client).await
     else {
         return;
     };
@@ -167,60 +173,41 @@ async fn process_user_selected_impl(
         selected_user_roles.as_ref(),
     );
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-        .components(components)
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::UpdateMessage,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .update_message(discord_utils::Message::components(components).ephemeral())
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't update `/{COMMAND}` main message: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 async fn process_servers_selected_impl(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Some(mut form_data) =
-        get_relevant_form_data(USER_SELECT_ID, interaction, &interaction_client).await
+        get_relevant_form_data(USER_SELECT_ID, interaction, http_client).await
     else {
         return;
     };
 
     form_data.selected_servers = Some(HashSet::from_iter(interaction_data.values.iter().cloned()));
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::DeferredUpdateMessage,
-        data: None,
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .acknowledge()
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't acknowledge `{SERVERS_SELECT_ID}` interaction: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 async fn process_submit_clicked_impl(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
-    discord::delete_interaction_message(interaction, &interaction_client).await;
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .delete_message()
+        .await
+        .log_error();
 
-    let Some(form_data) =
-        get_relevant_form_data(USER_SELECT_ID, interaction, &interaction_client).await
+    let Some(form_data) = get_relevant_form_data(USER_SELECT_ID, interaction, http_client).await
     else {
         return;
     };
@@ -230,20 +217,18 @@ async fn process_submit_clicked_impl(
             "Couldn't get the selected mentionable from the form data for `{SUBMIT_BUTTON_ID}` interaction"
         );
 
-        discord::negative_response(
+        discord_utils::error_message_response(
+            format!("Couldn't get the selected mentionable from the form data."),
             interaction,
-            &interaction_client,
-            &format!("✗ Couldn't get the selected mentionable from the form data."),
+            http_client,
         )
         .await;
 
-        interaction_client
-            .delete_response(&form_data.command_interaction_token)
+        discord_utils::InteractionResponse::new(interaction, http_client)
+            .with_token(&form_data.command_interaction_token)
+            .delete_message()
             .await
-            .map_err(|err| {
-                logging::error!("Couldn't delete `/{COMMAND}` placeholder message: {err}");
-            })
-            .ok();
+            .log_error();
 
         return;
     };
@@ -311,15 +296,11 @@ async fn process_submit_clicked_impl(
     let response_text =
         format!("✓ Updated the list of servers available to {mention}.\n{servers_info}");
 
-    interaction_client
-        .update_response(&form_data.command_interaction_token)
-        .content(Some(&response_text))
-        .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .with_token(&form_data.command_interaction_token)
+        .update(discord_utils::Message::text(response_text))
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't update the status message for {SUBMIT_BUTTON_ID}: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 /* Other Discord functions */
@@ -327,7 +308,7 @@ async fn process_submit_clicked_impl(
 /// Returns `true` if interaction is rejected, `false` otherwise.
 async fn reject_wrong_servers_amount(
     interaction: &discord::InteractionCreate,
-    interaction_client: &discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) -> bool {
     let servers_amount = bot_data::get_data().servers.len();
 
@@ -335,39 +316,16 @@ async fn reject_wrong_servers_amount(
         logging::info!("`/{COMMAND}` command issued while the amount of servers is 0");
 
         let error = format!(
-            "✗ No servers have been set up yet. It can be done via the `/{}` command.",
+            "No servers have been set up yet. It can be done via the `/{}` command.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, interaction_client, &error).await;
+
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return true;
     }
 
     false
-}
-
-async fn send_placeholder_message(
-    interaction: &discord::InteractionCreate,
-    interaction_client: &discord::InteractionClient<'_>,
-) {
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content("Waiting for settings submission...")
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .map_err(|err| {
-            logging::error!(
-                "Couldn't send \"Waiting for submission\" message for `/{COMMAND}`: {err}"
-            );
-        })
-        .ok();
 }
 
 /* Main message components */
@@ -527,7 +485,7 @@ impl MessageFormData {
 async fn get_relevant_form_data(
     interaction_id: &str,
     interaction: &discord::InteractionCreate,
-    interaction_client: &discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) -> Option<MappedMutexGuard<'static, MessageFormData>> {
     let Some(interaction_message) = &interaction.message else {
         logging::error!("Couldn't retrieve interaction message");
@@ -541,10 +499,10 @@ async fn get_relevant_form_data(
             "Couldn't find form data corresponding to the received `{interaction_id}` interaction"
         );
 
-        discord::negative_response(
+        discord_utils::error_message_response(
+            format!("Couldn't find form data corresponding to the received interaction."),
             interaction,
-            &interaction_client,
-            &format!("✗ Couldn't find form data corresponding to the received interaction."),
+            http_client,
         )
         .await;
 

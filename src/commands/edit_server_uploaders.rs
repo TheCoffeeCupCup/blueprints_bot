@@ -7,7 +7,13 @@ use colored::Colorize as _;
 use itertools::Itertools;
 use tokio::sync::Mutex;
 
-use crate::{bot_data, commands, common::ansi, discord, logging};
+use crate::{
+    bot_data, commands,
+    common::ansi,
+    discord,
+    discord_utils::{self, IntoMessage},
+    logging::{self, LogError as _},
+};
 
 pub const COMMAND: &'static str = "edit_server_uploaders";
 
@@ -44,7 +50,7 @@ static ACTIVE_FORMS: LazyLock<Mutex<HashMap<discord::MessageId, MessageFormData>
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let servers_amount = bot_data::get_data().servers.len();
 
@@ -52,55 +58,25 @@ pub async fn process_command(
         logging::info!("Edit server uploaders command issued while amount of servers is 0");
 
         let error = format!(
-            "✗ No servers have been set up yet. It can be done via the `/{}` command.",
+            "No servers have been set up yet. It can be done via the `/{}` command.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, &interaction_client, &error).await;
+
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     }
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content("Waiting for settings submission...")
-        .build();
+    logging::info!("Sending placeholder message");
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_message("Waiting for settings submission...".into_message())
         .await
-        .map_err(|err| {
-            logging::error!(
-                "Couldn't send \"Waiting for submission\" message for edit server uploaders: {err}"
-            );
-        })
-        .ok();
+        .log_error();
 
-    let followup_result = interaction_client
-        .create_followup(&interaction.token)
-        .components(construct_message_components(None).as_slice())
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-        .await;
-
-    match followup_result {
-        Ok(response) => match response.model().await.map(|followup| followup.id) {
-            Ok(followup_id) => {
-                ACTIVE_FORMS
-                    .lock()
-                    .await
-                    .insert(followup_id, MessageFormData::new(interaction.token.clone()));
-            }
-            Err(err) => {
-                logging::error!("Couldn't retrieve followup id: {err}");
-            }
-        },
-        Err(err) => {
-            logging::error!("Couldn't send edit server uploaders followup: {err}");
-        }
-    }
+    send_form_message(interaction, http_client)
+        .await
+        .log_error();
 
     logging::info!("Responded to edit server uploaders command");
 }
@@ -108,7 +84,7 @@ pub async fn process_command(
 pub async fn process_server_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let mut server_name: Option<&str> = None;
 
@@ -116,7 +92,7 @@ pub async fn process_server_select(
         server_name = Some(&selected_server_name);
     }
 
-    let data = match server_name {
+    let components = match server_name {
         Some(server_name) => {
             if let Some(interaction_message) = &interaction.message {
                 logging::info!("Updating server name form data for edit server uploaders.");
@@ -127,12 +103,7 @@ pub async fn process_server_select(
                 }
             }
 
-            let components = construct_message_components(Some(server_name));
-
-            discord::InteractionResponseDataBuilder::new()
-                .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-                .components(components)
-                .build()
+            construct_message_components(Some(server_name))
         }
         None => {
             logging::error!("Couldn't retrieve selected server name.");
@@ -148,37 +119,21 @@ pub async fn process_server_select(
                 .build(),
             ));
 
-            discord::InteractionResponseDataBuilder::new()
-                .flags(discord::MessageFlags::IS_COMPONENTS_V2 | discord::MessageFlags::EPHEMERAL)
-                .components(components)
-                .build()
+            components
         }
     };
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::UpdateMessage,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .update_message(discord_utils::Message::components(components).ephemeral())
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't update edit server uploaders message: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 pub async fn process_users_select(
     interaction: &discord::InteractionCreate,
     interaction_data: &discord::MessageComponentInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::DeferredUpdateMessage,
-        data: None,
-    };
-
     if let Some(interaction_message) = &interaction.message {
         let mut form_data = ACTIVE_FORMS.lock().await;
 
@@ -203,13 +158,10 @@ pub async fn process_users_select(
         }
     }
 
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .acknowledge()
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't defer update for edit server uploaders message: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 fn create_uploaders_diff(
@@ -240,11 +192,14 @@ fn create_uploaders_diff(
 
 pub async fn process_uploaders_submission(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing edit uploaders submission");
 
-    discord::delete_interaction_message(interaction, &interaction_client).await;
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .delete_message()
+        .await
+        .log_error();
 
     let Some(interaction_message) = &interaction.message else {
         logging::error!("Couldn't get the message from interaction");
@@ -296,15 +251,11 @@ pub async fn process_uploaders_submission(
         }
     });
 
-    interaction_client
-        .update_response(&form_data.command_interaction_token)
-        .content(Some(&response))
-        .flags(discord::MessageFlags::SUPPRESS_NOTIFICATIONS)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .with_token(&form_data.command_interaction_token)
+        .update(discord_utils::Message::text(response).ephemeral())
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't update edit server uploaders status message: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::Component> {
@@ -371,4 +322,23 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
     }
 
     components
+}
+
+async fn send_form_message(
+    interaction: &discord::InteractionCreate,
+    http_client: &discord::HttpClient,
+) -> Result<(), String> {
+    let form_message =
+        discord_utils::Message::components(construct_message_components(None)).ephemeral();
+
+    let response = discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_followup_message(form_message)
+        .await?;
+
+    ACTIVE_FORMS.lock().await.insert(
+        discord_utils::followup_id(response).await?,
+        MessageFormData::new(interaction.token.clone()),
+    );
+
+    Ok(())
 }

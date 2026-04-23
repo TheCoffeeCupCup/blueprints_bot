@@ -1,6 +1,7 @@
 mod bot_data;
 mod commands;
 mod common;
+mod discord_utils;
 mod encryption;
 mod ftp;
 mod logging;
@@ -127,10 +128,8 @@ fn get_author_names(interaction: &discord::InteractionCreate) -> Vec<&str> {
 
 async fn handle_interaction_create(
     interaction: &discord::InteractionCreate,
-    http: &discord::HttpClient,
+    http_client: &discord::HttpClient,
 ) {
-    let interaction_client = http.interaction(interaction.application_id);
-
     let author_names = get_author_names(interaction);
 
     let author_names = if author_names.is_empty() {
@@ -152,39 +151,31 @@ async fn handle_interaction_create(
 
             match command_name {
                 commands::upload_blueprints::COMMAND => {
-                    commands::upload_blueprints::process_command(&interaction, interaction_client)
-                        .await;
+                    commands::upload_blueprints::process_command(&interaction, http_client).await;
                 }
                 commands::add_server::COMMAND => {
-                    commands::add_server::process_command(&interaction, interaction_client).await;
+                    commands::add_server::process_command(&interaction, http_client).await;
                 }
                 commands::remove_server::COMMAND => {
-                    commands::remove_server::process_command(&interaction, interaction_client)
-                        .await;
+                    commands::remove_server::process_command(&interaction, http_client).await;
                 }
                 commands::edit_server_uploaders::COMMAND => {
-                    commands::edit_server_uploaders::process_command(
-                        &interaction,
-                        interaction_client,
-                    )
-                    .await;
+                    commands::edit_server_uploaders::process_command(&interaction, http_client)
+                        .await;
                 }
                 commands::edit_uploader_servers::COMMAND => {
-                    commands::edit_uploader_servers::process_command(
-                        &interaction,
-                        interaction_client,
-                    )
-                    .await;
+                    commands::edit_uploader_servers::process_command(&interaction, http_client)
+                        .await;
                 }
                 commands::version::COMMAND => {
-                    commands::version::process_command(&interaction, interaction_client).await;
+                    commands::version::process_command(&interaction, http_client).await;
                 }
 
                 commands::upload_blueprints::MESSAGE_COMMAND => {
                     commands::upload_blueprints::process_message_command(
                         &interaction,
                         command,
-                        interaction_client,
+                        http_client,
                     )
                     .await;
                 }
@@ -203,7 +194,7 @@ async fn handle_interaction_create(
                     commands::upload_blueprints::process_modal_submission(
                         &interaction,
                         submit_data,
-                        interaction_client,
+                        http_client,
                     )
                     .await;
                 }
@@ -211,7 +202,7 @@ async fn handle_interaction_create(
                     commands::add_server::process_modal_submission(
                         &interaction,
                         submit_data,
-                        interaction_client,
+                        http_client,
                     )
                     .await;
                 }
@@ -219,7 +210,7 @@ async fn handle_interaction_create(
                     commands::remove_server::process_modal_submission(
                         &interaction,
                         submit_data,
-                        interaction_client,
+                        http_client,
                     )
                     .await;
                 }
@@ -229,7 +220,7 @@ async fn handle_interaction_create(
                         commands::upload_blueprints::process_from_message_modal_submission(
                             &interaction,
                             submit_data,
-                            interaction_client,
+                            http_client,
                         )
                         .await;
                     }
@@ -247,7 +238,7 @@ async fn handle_interaction_create(
                     commands::edit_server_uploaders::process_server_select(
                         interaction,
                         message_component,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }
@@ -255,14 +246,14 @@ async fn handle_interaction_create(
                     commands::edit_server_uploaders::process_users_select(
                         interaction,
                         message_component,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }
                 "confirm_edit_uploaders" => {
                     commands::edit_server_uploaders::process_uploaders_submission(
                         interaction,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }
@@ -271,7 +262,7 @@ async fn handle_interaction_create(
                     commands::edit_uploader_servers::process_user_selected(
                         interaction,
                         message_component,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }
@@ -279,7 +270,7 @@ async fn handle_interaction_create(
                     commands::edit_uploader_servers::process_servers_selected(
                         interaction,
                         message_component,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }
@@ -287,7 +278,7 @@ async fn handle_interaction_create(
                     commands::edit_uploader_servers::process_submit_clicked(
                         interaction,
                         message_component,
-                        interaction_client,
+                        http_client,
                     )
                     .await
                 }

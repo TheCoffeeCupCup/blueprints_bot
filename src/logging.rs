@@ -1,4 +1,5 @@
 use colored::Colorize;
+use std::fmt::Display;
 use std::io::Write;
 use std::{ffi::OsStr, fs};
 
@@ -109,4 +110,16 @@ pub fn init_log_file() -> Result<(), AnyError> {
     purge_old_logs();
 
     Ok(())
+}
+
+pub trait LogError {
+    fn log_error(self);
+}
+
+impl<T, E: Display> LogError for Result<T, E> {
+    fn log_error(self) {
+        if let Err(error) = self {
+            logging::error!("{error}")
+        }
+    }
 }

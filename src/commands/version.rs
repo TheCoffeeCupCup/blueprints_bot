@@ -1,6 +1,11 @@
 /* Constants */
 
-use crate::{bot_data, common::discord, logging};
+use crate::{
+    bot_data,
+    common::discord,
+    discord_utils,
+    logging::{self, LogError},
+};
 
 pub const COMMAND: &'static str = "version";
 
@@ -20,10 +25,10 @@ pub fn create_command() -> discord::Command {
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing command `/{COMMAND}`");
-    process_command_impl(interaction, interaction_client).await;
+    process_command_impl(interaction, http_client).await;
     logging::info!("Finished processing command `/{COMMAND}`");
 }
 
@@ -31,25 +36,16 @@ pub async fn process_command(
 
 async fn process_command_impl(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let bot_version = format!("Bot version: `{}`", bot_data::CARGO_PKG_VERSION);
     let version_status = bot_data::get_git_version_status(bot_data::GIT_TAG).await;
     let git_tag = format!("Git tag: `{}` ({version_status})", bot_data::GIT_TAG);
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content(format!("{bot_version}\n{git_tag}"))
-        .flags(discord::MessageFlags::EPHEMERAL)
-        .build();
+    let message_content = format!("{bot_version}\n{git_tag}");
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_message(discord_utils::Message::text(message_content).ephemeral())
         .await
-        .map_err(|err| crate::logging::error!("Couldn't display bot's version: {err}"))
-        .ok();
+        .log_error();
 }

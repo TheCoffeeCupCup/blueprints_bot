@@ -6,6 +6,7 @@ pub mod discord {
     pub use twilight_http::client::InteractionClient;
 
     pub use twilight_model::channel::Attachment;
+    pub use twilight_model::channel::Message;
 
     pub use twilight_model::channel::message::AllowedMentions;
     pub use twilight_model::channel::message::Component;
@@ -58,101 +59,14 @@ pub mod discord {
     pub use twilight_util::builder::message::SelectMenuOptionBuilder;
     pub use twilight_util::builder::message::TextDisplayBuilder;
 
-    pub struct TextInputBuilder<'a> {
-        pub custom_id: &'a str,
-
-        pub label: &'a str,
-        pub description: Option<&'a str>,
-
-        pub placeholder: Option<&'a str>,
-    }
-
-    pub async fn negative_response(
-        interaction: &InteractionCreate,
-        interaction_client: &InteractionClient<'_>,
-        text: &str,
-    ) {
-        use colored::Colorize as _;
-
-        let data = InteractionResponseDataBuilder::new()
-            .content(super::ansi(text.red().to_string()))
-            .flags(MessageFlags::EPHEMERAL)
-            .build();
-
-        let response = InteractionResponse {
-            kind: InteractionResponseType::ChannelMessageWithSource,
-            data: Some(data),
-        };
-
-        interaction_client
-            .create_response(interaction.id, &interaction.token, &response)
-            .await
-            .map_err(|err| {
-                crate::logging::error!("Couldn't send negative response \"{text}\": {err}")
-            })
-            .ok();
-    }
-
-    pub async fn delete_interaction_message(
-        interaction: &InteractionCreate,
-        interaction_client: &InteractionClient<'_>,
-    ) {
-        // For whatever reason I first need to create deferred update response to delete the message.
-        let response = InteractionResponse {
-            kind: InteractionResponseType::DeferredUpdateMessage,
-            data: None,
-        };
-
-        interaction_client
-            .create_response(interaction.id, &interaction.token, &response)
-            .await
-            .map_err(|err| {
-                crate::logging::error!(
-                    "Couldn't send defer update response for message deletion: {err}"
-                );
-            })
-            .ok();
-
-        interaction_client
-            .delete_response(&interaction.token)
-            .await
-            .map_err(|err| {
-                crate::logging::error!("Couldn't delete the message: {err}");
-            })
-            .ok();
-    }
-}
-
-impl discord::TextInputBuilder<'_> {
-    pub fn build(self) -> discord::Component {
-        let mut builder = discord::LabelBuilder::new(
-            self.label,
-            discord::Component::TextInput(discord::component::TextInput {
-                id: None,
-                custom_id: self.custom_id.to_string(),
-                max_length: None,
-                min_length: Some(1),
-                placeholder: self.placeholder.map(|p| p.to_string()),
-                required: None,
-                style: discord::component::TextInputStyle::Short,
-                value: None,
-
-                #[allow(deprecated)]
-                label: None,
-            }),
-        );
-
-        if let Some(description) = self.description {
-            builder = builder.description(description);
-        }
-
-        discord::Component::Label(builder.build())
-    }
+    pub use twilight_http::request::application::interaction::CreateFollowup;
+    pub use twilight_http::request::application::interaction::UpdateResponse;
 }
 
 pub type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
-pub fn ansi(formatted: String) -> String {
+pub fn ansi(formatted: impl Into<String>) -> String {
+    let formatted: String = formatted.into();
     format!("```ansi\n{}\n```", formatted)
 }
 

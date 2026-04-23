@@ -4,7 +4,10 @@ use colored::Colorize as _;
 use itertools::Itertools as _;
 use tokio::sync::Mutex;
 
-use crate::{ansi, bot_data, commands, discord, ftp, logging};
+use crate::{
+    ansi, bot_data, commands, discord, discord_utils, ftp,
+    logging::{self, LogError},
+};
 
 pub const COMMAND: &'static str = "upload_blueprints";
 pub const MESSAGE_COMMAND: &'static str = "Upload blueprints";
@@ -77,6 +80,8 @@ fn create_yes_no_select(title: &str, description: &str) -> discord::Component {
 }
 
 fn get_next_modal_id() -> String {
+    logging::info!("Generating next modal id");
+
     let mut number = 0;
 
     bot_data::update_data(|bot_data| {
@@ -91,7 +96,7 @@ fn get_next_modal_id() -> String {
 
 async fn create_modal_components(
     interaction: &discord::InteractionCreate,
-    interaction_client: &discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
     show_file_uploader: bool,
 ) -> Option<Vec<discord::Component>> {
     let mut components = Vec::new();
@@ -109,10 +114,10 @@ async fn create_modal_components(
         logging::info!("Upload blueprints command issued while amount of servers is 0");
 
         let error = format!(
-            "✗ No servers have been set up yet. Ask netrunners to add your server or use `/{}` if you are one.",
+            "No servers have been set up yet. Ask netrunners to add your server or use `/{}` if you are one.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, &interaction_client, &error).await;
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return None;
     }
@@ -121,10 +126,10 @@ async fn create_modal_components(
         logging::info!("Non-uploader issued the upload blueprints command");
 
         let error = format!(
-            "✗ You don't have access to blueprint uploading for any server. Ask netrunners for permission or use `/{}` if you are one.",
+            "You don't have access to blueprint uploading for any server. Ask netrunners for permission or use `/{}` if you are one.",
             commands::edit_server_uploaders::COMMAND
         );
-        discord::negative_response(interaction, &interaction_client, &error).await;
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return None;
     }
@@ -175,40 +180,29 @@ pub async fn display_modal(
     modal_id: &str,
     show_file_uploader: bool,
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Some(components) =
-        create_modal_components(interaction, &interaction_client, show_file_uploader).await
+        create_modal_components(interaction, http_client, show_file_uploader).await
     else {
         return;
     };
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .title("Upload blueprint files")
-        .custom_id(modal_id)
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2)
-        .components(components)
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::Modal,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .show_modal(discord_utils::Modal::new(
+            modal_id,
+            "Upload blueprint files",
+            components,
+        ))
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't display the upload blueprints modal: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
-    display_modal(MODAL_ID, true, interaction, interaction_client).await;
+    display_modal(MODAL_ID, true, interaction, http_client).await;
 }
 
 fn get_all_attachments(
@@ -236,7 +230,7 @@ fn get_all_attachments(
 pub async fn process_message_command(
     interaction: &discord::InteractionCreate,
     command_data: &discord::CommandData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let modal_id = get_next_modal_id();
 
@@ -260,9 +254,9 @@ pub async fn process_message_command(
         logging::info!("`{MESSAGE_COMMAND}` message command used on a message with no attachments");
 
         let error = format!(
-            "✗ The selected message must have attached files to use this command but none detected."
+            "The selected message must have attached files to use this command but none detected."
         );
-        discord::negative_response(interaction, &interaction_client, &error).await;
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     }
@@ -272,7 +266,7 @@ pub async fn process_message_command(
         .await
         .insert(modal_id.clone(), all_attachments);
 
-    display_modal(&modal_id, false, interaction, interaction_client).await;
+    display_modal(&modal_id, false, interaction, http_client).await;
 }
 
 fn get_selected_servers(
@@ -321,7 +315,7 @@ async fn send_files(
     mut files: Vec<Attachment>,
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Ok(selected_servers) = get_selected_servers(&submit_data.components) else {
         logging::error!("Selected servers not found in the submitted components");
@@ -340,7 +334,7 @@ async fn send_files(
     let mut upload_files_future: Option<_> = None;
     let mut upload_files_text: Option<_> = None;
 
-    let response_data = match verify_blueprints(&files, selected_servers) {
+    let message = match verify_blueprints(&files, selected_servers) {
         Ok(text) => {
             logging::info!(
                 "Uploading blueprints {:?} to servers {:?}",
@@ -355,32 +349,15 @@ async fn send_files(
             )));
             upload_files_text = Some(text.clone());
 
-            discord::InteractionResponseDataBuilder::new()
-                .content(ansi(text + "\n\nAwaiting for status update..."))
-                .build()
+            discord_utils::Message::text(ansi(text + "\n\nAwaiting for status update..."))
         }
-        Err(text) => discord::InteractionResponseDataBuilder::new()
-            .content(ansi(text))
-            .flags(discord::MessageFlags::EPHEMERAL) // In case of error the response will only be visible to the modal submitter.
-            .build(),
+        Err(text) => discord_utils::Message::text(ansi(text)).ephemeral(),
     };
 
-    // TODO: add real-time status report for each file (uploading, uploaded, error).
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(response_data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_message(message)
         .await
-        .map_err(|err| {
-            logging::error!(
-                "Couldn't send initial status message in response to upload blueprints submission: {err}"
-            );
-        })
-        .ok();
+        .log_error();
 
     if let (Some(upload_files_future), Some(upload_files_text)) =
         (upload_files_future, upload_files_text)
@@ -404,23 +381,19 @@ async fn send_files(
         }
 
         // Even if there are no errors, the message is updated anyway to remove the "Awaiting for status update" text.
-        interaction_client
-            .update_response(&interaction.token)
-            .content(Some(&ansi(upload_files_text + &errors_list)))
+        discord_utils::InteractionResponse::new(interaction, http_client)
+            .update(discord_utils::Message::text(ansi(
+                upload_files_text + &errors_list,
+            )))
             .await
-            .map_err(|err| {
-                logging::error!(
-                    "Couldn't update the status message after blueprints uploading: {err}"
-                );
-            })
-            .ok();
+            .log_error();
     }
 }
 
 pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let mut files = Vec::<Attachment>::new();
 
@@ -433,13 +406,13 @@ pub async fn process_modal_submission(
         }
     }
 
-    send_files(files, interaction, submit_data, interaction_client).await;
+    send_files(files, interaction, submit_data, http_client).await;
 }
 
 pub async fn process_from_message_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Some(files) = MODAL_ASSOCIATED_DATA
         .lock()
@@ -452,13 +425,13 @@ pub async fn process_from_message_modal_submission(
         );
 
         let error =
-            format!("✗ Couldn't retrieve the necessary data associated with this interaction.");
-        discord::negative_response(interaction, &interaction_client, &error).await;
+            format!("Couldn't retrieve the necessary data associated with this interaction.");
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     };
 
-    send_files(files, interaction, submit_data, interaction_client).await;
+    send_files(files, interaction, submit_data, http_client).await;
 }
 
 fn verify_blueprints(

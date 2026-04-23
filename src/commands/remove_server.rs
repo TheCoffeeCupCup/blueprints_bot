@@ -1,7 +1,10 @@
 use colored::Colorize as _;
 use itertools::Itertools;
 
-use crate::{ansi, bot_data, commands, common, discord, logging};
+use crate::{
+    ansi, bot_data, commands, common, discord, discord_utils,
+    logging::{self, LogError},
+};
 
 /* Constants */
 
@@ -24,20 +27,20 @@ pub fn create_command() -> discord::Command {
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing command `/{COMMAND}`");
-    process_command_impl(interaction, interaction_client).await;
+    process_command_impl(interaction, http_client).await;
     logging::info!("Finished processing command `/{COMMAND}`");
 }
 
 pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing modal `{MODAL_ID}`");
-    process_modal_submission_impl(interaction, submit_data, interaction_client).await;
+    process_modal_submission_impl(interaction, submit_data, http_client).await;
     logging::info!("Finished processing modal `{MODAL_ID}`");
 }
 
@@ -45,7 +48,7 @@ pub async fn process_modal_submission(
 
 async fn process_command_impl(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let servers_amount = bot_data::get_data().servers.len();
 
@@ -53,10 +56,10 @@ async fn process_command_impl(
         logging::info!("`/{COMMAND}` issued while amount of servers is 0");
 
         let error = format!(
-            "✗ No servers have been set up yet. It can be done via the `/{}` command.",
+            "No servers have been set up yet. It can be done via the `/{}` command.",
             commands::add_server::COMMAND
         );
-        discord::negative_response(interaction, &interaction_client, &error).await;
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     }
@@ -70,39 +73,28 @@ async fn process_command_impl(
         .build(),
     );
 
-    let response_data = discord::InteractionResponseDataBuilder::new()
-        .title("Select servers for removal")
-        .custom_id(MODAL_ID)
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2)
-        .components([server_select_label])
-        .build();
-
-    let interaction_response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::Modal,
-        data: Some(response_data),
-    };
-
     logging::info!("Sending response to `/{COMMAND}`");
 
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &interaction_response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .show_modal(discord_utils::Modal::new(
+            MODAL_ID,
+            "Select servers for removal",
+            [server_select_label],
+        ))
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't display the `{MODAL_ID}` modal: {err}");
-        })
-        .ok();
+        .log_error();
 }
 
 async fn process_modal_submission_impl(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     let Some(selected_servers) = unwrap_selected_servers(submit_data) else {
         logging::error!("Wrong interaction structure. Sending the error message response.");
 
-        let error = "✗ Unexpected error occurred: the modal submit data has wrong format.";
-        discord::negative_response(interaction, &interaction_client, error).await;
+        let error = "Unexpected error occurred: the modal submit data has wrong format.";
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     };
@@ -111,8 +103,8 @@ async fn process_modal_submission_impl(
     if selected_servers.is_empty() {
         logging::error!("Selected servers list is empty. Sending the error message response.");
 
-        let error = "✗ Unexpected error occurred: no servers were selected.";
-        discord::negative_response(interaction, &interaction_client, error).await;
+        let error = "Unexpected error occurred: no servers were selected.";
+        discord_utils::error_message_response(error, interaction, http_client).await;
 
         return;
     }
@@ -160,26 +152,14 @@ async fn process_modal_submission_impl(
         );
     }
 
-    let response = ansi(response_lines.into_iter().join("\n\n"));
-
-    let data = discord::InteractionResponseDataBuilder::new()
-        .content(&response)
-        .build();
-
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::ChannelMessageWithSource,
-        data: Some(data),
-    };
-
     logging::info!("Sending response to `{MODAL_ID}`");
 
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    let response = ansi(response_lines.into_iter().join("\n\n"));
+
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .send_message(discord_utils::Message::text(response))
         .await
-        .map_err(|err| {
-            crate::logging::error!("Couldn't respond to the `{MODAL_ID}` modal submission: {err}")
-        })
-        .ok();
+        .log_error();
 }
 
 /* Helper functions */

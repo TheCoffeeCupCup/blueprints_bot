@@ -1,7 +1,9 @@
 use colored::Colorize as _;
 
 use crate::common::ansi;
-use crate::{bot_data, discord, ftp, logging};
+use crate::discord_utils::IntoMessage;
+use crate::logging::LogError;
+use crate::{bot_data, discord, discord_utils, ftp, logging};
 
 pub const COMMAND: &'static str = "add_server";
 pub const MODAL_ID: &'static str = "add_server_modal";
@@ -20,71 +22,36 @@ pub fn create_command() -> discord::Command {
 
 pub async fn process_command(
     interaction: &discord::InteractionCreate,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Processing add_server command");
 
     let components = [
-        discord::TextInputBuilder {
-            custom_id: "server_name",
-            label: "Server name",
-            description: Some("Can be set to whatever you want - it's only used for distinguishing servers in Discord."),
-            placeholder: Some("NAC-2"),
-        }
-        .build(),
-        discord::TextInputBuilder {
-            custom_id: "full_ip",
-            label: "Full IP address",
-            description: Some("IP and FTP port must be combined with a colon (:)."),
-            placeholder: Some("192.168.0.1:21"),
-        }
-        .build(),
-        discord::TextInputBuilder {
-            custom_id: "ftp_username",
-            label: "FTP username",
-            description: None,
-            placeholder: None,
-        }
-        .build(),
-        discord::TextInputBuilder {
-            custom_id: "ftp_password",
-            label: "FTP password",
-            description: None,
-            placeholder: None,
-        }
-        .build(),
-        discord::TextInputBuilder {
-            custom_id: "session_name",
-            label: "Satisfactory session name",
-            description: Some(
-                "The name of the folder under `.config/Epic/FactoryGame/Saved/SaveGames/blueprints/`.",
-            ),
-            placeholder: None,
-        }
-        .build(),
+        discord_utils::TextInputBuilder::new("server_name", "Server name")
+            .description("Can be set to whatever you want - it's only used for distinguishing servers in Discord.")
+            .placeholder("NAC-2")
+            .build(),
+        discord_utils::TextInputBuilder::new("full_ip", "Full IP address")
+            .description("IP and FTP port must be combined with a colon (:).")
+            .placeholder("192.168.0.1:21")
+            .build(),
+        discord_utils::TextInputBuilder::new("ftp_username", "FTP username")
+            .build(),
+        discord_utils::TextInputBuilder::new("ftp_password", "FTP password")
+            .build(),
+        discord_utils::TextInputBuilder::new("session_name", "Satisfactory session name")
+            .description("The name of the folder under `.config/Epic/FactoryGame/Saved/SaveGames/blueprints/`.")
+            .build(),
     ];
 
     logging::info!("Displaying a modal for server adding");
 
-    let data = discord::InteractionResponseDataBuilder::new()
-        .title("Add a server for blueprint uploading")
-        .custom_id(MODAL_ID)
-        .flags(discord::MessageFlags::IS_COMPONENTS_V2)
-        .components(components)
-        .build();
+    let modal_title = "Add a server for blueprint uploading";
 
-    let response = discord::InteractionResponse {
-        kind: discord::InteractionResponseType::Modal,
-        data: Some(data),
-    };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
+    discord_utils::InteractionResponse::new(interaction, http_client)
+        .show_modal(discord_utils::Modal::new(MODAL_ID, modal_title, components))
         .await
-        .map_err(|err| {
-            logging::error!("Couldn't respond to add_server command: {err}");
-        })
-        .ok();
+        .log_error();
 
     logging::info!("Finish processing add_server command");
 }
@@ -159,7 +126,7 @@ impl<'a> ServerCredentialsModalData<'a> {
             let full_ip = self.full_ip.unwrap();
 
             if !verify_ip(full_ip) {
-                logging::warning!("IP \"{full_ip}\" failed regex check");
+                logging::info!("IP \"{full_ip}\" failed regex check");
 
                 return Err(format!(
                     "✗ IP address \"{full_ip}\" has wrong format. It should look similar to this: \"192.168.0.1:21\"."
@@ -189,7 +156,7 @@ impl<'a> ServerCredentialsModalData<'a> {
 pub async fn process_modal_submission(
     interaction: &discord::InteractionCreate,
     submit_data: &discord::ModalInteractionData,
-    interaction_client: discord::InteractionClient<'_>,
+    http_client: &discord::HttpClient,
 ) {
     logging::info!("Server adding modal submitted");
 
@@ -198,40 +165,27 @@ pub async fn process_modal_submission(
     let mut matched_server_name: Option<String> = None;
     let mut matched_server_creds: Option<bot_data::ServerCredentials> = None;
 
-    let response = match server_modal_data.to_server_creds() {
+    match server_modal_data.to_server_creds() {
         Ok((server_name, server_creds)) => {
             logging::info!("Showing loading for server adding response");
 
             matched_server_name = Some(server_name.clone());
             matched_server_creds = Some(server_creds.clone());
 
-            discord::InteractionResponse {
-                kind: discord::InteractionResponseType::DeferredChannelMessageWithSource,
-                data: None,
-            }
+            discord_utils::InteractionResponse::new(interaction, http_client)
+                .show_loading()
+                .await
+                .log_error();
         }
         Err(err) => {
             logging::info!("Server adding rejected");
 
-            let response_data = discord::InteractionResponseDataBuilder::new()
-                .content(ansi(err.red().to_string()))
-                .flags(discord::MessageFlags::EPHEMERAL)
-                .build();
-
-            discord::InteractionResponse {
-                kind: discord::InteractionResponseType::ChannelMessageWithSource,
-                data: Some(response_data),
-            }
+            discord_utils::InteractionResponse::new(interaction, http_client)
+                .send_message(ansi(err.red().to_string()).into_message().ephemeral())
+                .await
+                .log_error();
         }
     };
-
-    interaction_client
-        .create_response(interaction.id, &interaction.token, &response)
-        .await
-        .map_err(|err| {
-            logging::error!("Couldn't send response to add_server modal submission: {err}");
-        })
-        .ok();
 
     logging::info!("Responded to a server adding modal");
 
@@ -241,10 +195,9 @@ pub async fn process_modal_submission(
 
         let updated_content = match connection_result {
             Ok(_) => {
-                logging::info!(
-                    "Adding server \"{server_name}\" IP: {}",
-                    server_creds.full_ip
-                );
+                let full_ip = &server_creds.full_ip;
+
+                logging::info!("Adding server \"{server_name}\" IP: {full_ip}");
 
                 bot_data::update_data(|data| {
                     data.servers
@@ -267,15 +220,10 @@ pub async fn process_modal_submission(
         };
 
         logging::info!("Updating the response to add_server modal submission");
-        interaction_client
-            .update_response(&interaction.token)
-            .content(Some(&ansi(updated_content)))
+
+        discord_utils::InteractionResponse::new(interaction, http_client)
+            .update(discord_utils::Message::text(ansi(updated_content)))
             .await
-            .map_err(|err| {
-                logging::error!(
-                    "Couldn't send updated response to add_server modal submission: {err}"
-                );
-            })
-            .ok();
+            .log_error();
     }
 }
