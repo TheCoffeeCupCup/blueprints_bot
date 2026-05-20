@@ -8,15 +8,8 @@ use crate::{bot_data, discord, encryption, logging, secrets};
 pub const CARGO_PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 pub const GIT_TAG: &'static str = env!("GIT_TAG");
 
-#[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
-pub enum ConnectionType {
-    FTP,
-    // SFTP,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerCredentials {
-    pub connection: ConnectionType,
     pub full_ip: String,
     pub user: String,
     pub password: String,
@@ -89,6 +82,9 @@ pub struct BotData {
 
     #[serde(default)]
     pub next_component_id: u64,
+
+    #[serde(default)]
+    sftp_migration_completed: bool,
 }
 
 ///////////////////////////////////////////////////
@@ -116,10 +112,14 @@ const BOT_DATA_FILE: &'static str = "bot_data.bin";
 const BACKUP_BOT_DATA_FILE: &'static str = "bot_data_backup.bin";
 
 static BOT_DATA: LazyLock<Arc<RwLock<BotData>>> = LazyLock::new(|| {
-    let data = load_data().unwrap_or_else(|| {
+    let mut data = load_data().unwrap_or_else(|| {
         logging::warning!("Loading bot data from the default value");
         BotData::default()
     });
+
+    if !data.sftp_migration_completed {
+        perform_sftp_migration(&mut data);
+    }
 
     Arc::new(RwLock::new(data))
 });
@@ -216,6 +216,26 @@ where
     }
 
     save_data();
+}
+
+fn perform_sftp_migration(data: &mut BotData) {
+    logging::warning!("Performing SFTP migration");
+
+    for (name, server) in data.servers.iter_mut() {
+        let full_ip = &mut server.credentials.full_ip;
+
+        if let Some(stripped) = full_ip.strip_suffix(":21") {
+            logging::warning!(
+                "SFTP migration: Replacing \":21\" with \":22\" in \"{name}\" server's IP"
+            );
+
+            *full_ip = format!("{}:22", stripped.to_string());
+        }
+    }
+
+    data.sftp_migration_completed = true;
+
+    logging::info!("SFTP migration complete");
 }
 
 ///////////////////////////////////////////////////

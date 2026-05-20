@@ -32,12 +32,12 @@ pub async fn process_command(
             .placeholder("NAC-2")
             .build(),
         discord_utils::TextInputBuilder::new("full_ip", "Full IP address")
-            .description("IP and FTP port must be combined with a colon (:).")
-            .placeholder("192.168.0.1:21")
+            .description("IP and SFTP port must be combined with a colon (:). If port isn't specified, 22 is used by default.")
+            .placeholder("192.168.0.1:6969")
             .build(),
-        discord_utils::TextInputBuilder::new("ftp_username", "FTP username")
+        discord_utils::TextInputBuilder::new("ftp_username", "SFTP username")
             .build(),
-        discord_utils::TextInputBuilder::new("ftp_password", "FTP password")
+        discord_utils::TextInputBuilder::new("ftp_password", "SFTP password")
             .build(),
         discord_utils::TextInputBuilder::new("session_name", "Satisfactory session name")
             .description("The name of the folder under `.config/Epic/FactoryGame/Saved/SaveGames/blueprints/`.")
@@ -70,15 +70,6 @@ fn push_if_none<T, OptionT>(values: &mut Vec<T>, option: &Option<OptionT>, none_
     if option.is_none() {
         values.push(none_value);
     };
-}
-
-fn verify_ip(ip: &str) -> bool {
-    use std::sync::LazyLock;
-
-    static REGEX: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"^(\d{1,3}\.){3}\d{1,3}:\d{1,5}$").unwrap());
-
-    REGEX.is_match(ip)
 }
 
 impl<'a> ServerCredentialsModalData<'a> {
@@ -123,19 +114,14 @@ impl<'a> ServerCredentialsModalData<'a> {
         push_if_none(&mut missing_list, &self.session_name, "session_name");
 
         if missing_list.is_empty() {
-            let full_ip = self.full_ip.unwrap();
+            let mut full_ip = self.full_ip.unwrap().to_string();
 
-            if !verify_ip(full_ip) {
-                logging::info!("IP \"{full_ip}\" failed regex check");
-
-                return Err(format!(
-                    "✗ IP address \"{full_ip}\" has wrong format. It should look similar to this: \"192.168.0.1:21\"."
-                ));
+            if !full_ip.contains(':') {
+                full_ip.push_str(":22");
             }
 
             let server_creds = bot_data::ServerCredentials {
-                connection: bot_data::ConnectionType::FTP,
-                full_ip: full_ip.to_string(),
+                full_ip,
                 user: self.ftp_username.unwrap().to_string(),
                 password: self.ftp_password.unwrap().to_string(),
                 session_name: self.session_name.unwrap().to_string(),

@@ -26,9 +26,8 @@ Discord bot for easy uploading blueprint files to dedicated Satisfactory servers
 
 ## Features
 - Allows admins to set up the servers and uploaders one time, afterwards server members with corresponding permissions can upload the files all they want without disturbing anyone.
-- Command `/add_server` allows to add a server by specifying name, IP, FTP credentials and session name.
+- Command `/add_server` allows to add a server by specifying name, IP, SFTP credentials and session name.
     - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
-    - IP is verified with a regex and a clear error message will be returned in case the IP format is wrong.
     - The bot will try to connect to the server and won't add it to the internal list in case of failure.
 - Command `/remove_server` allows to remove one or more servers from the previously set up for blueprints uploading.
     - The permissions to run this command must be managed from Discord's server settings. By default **only admins** can run the command.
