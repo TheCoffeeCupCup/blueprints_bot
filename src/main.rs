@@ -12,6 +12,8 @@ use twilight_gateway::StreamExt as _;
 
 use common::{AnyError, ansi, discord};
 
+use crate::logging::LogError;
+
 #[tokio::main]
 async fn main() -> Result<(), AnyError> {
     // Required for displaying colors in Discord messages that use ansi code block trick.
@@ -24,6 +26,12 @@ async fn main() -> Result<(), AnyError> {
     logging::info!("GIT_TAG: {}", bot_data::GIT_TAG);
     bot_data::get_git_version_status(bot_data::GIT_TAG).await;
 
+    start_bot().await;
+
+    Ok(())
+}
+
+async fn start_bot() {
     let intents = discord::Intents::empty();
 
     let mut shard;
@@ -45,10 +53,37 @@ async fn main() -> Result<(), AnyError> {
         http = std::sync::Arc::new(client_builder.build());
     }
 
-    let application_id = http.current_user_application().await?.model().await?.id;
-    let target_guild_id = discord::Id::new(secrets::guild_id().parse()?);
+    let target_guild_id = {
+        let guild_id = match secrets::guild_id().parse() {
+            Ok(guild_id) => guild_id,
+            Err(err) => {
+                logging::error!("Couldn't parse guild id: {err}");
+                return;
+            }
+        };
 
-    let interaction_client = http.interaction(application_id);
+        discord::Id::new(guild_id)
+    };
+
+    let interaction_client = {
+        let application = match http.current_user_application().await {
+            Ok(app) => app,
+            Err(err) => {
+                logging::error!("Couldn't retrieve current user application: {err}");
+                return;
+            }
+        };
+
+        let application_model = match application.model().await {
+            Ok(app_model) => app_model,
+            Err(err) => {
+                logging::error!("Couldn't retrieve application model: {err}");
+                return;
+            }
+        };
+
+        http.interaction(application_model.id)
+    };
 
     log_info!("Setting guild commands");
     interaction_client
@@ -64,7 +99,8 @@ async fn main() -> Result<(), AnyError> {
                 commands::version::create_command(),
             ],
         )
-        .await?;
+        .await
+        .log_error();
 
     log_info!("Starting the loop");
     while let Some(item) = shard.next_event(discord::EventTypeFlags::all()).await {
@@ -79,8 +115,6 @@ async fn main() -> Result<(), AnyError> {
             Err(err) => logging::error!("Error receiving event: {}", err),
         }
     }
-
-    Ok(())
 }
 
 async fn handle_event(
