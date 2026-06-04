@@ -1,4 +1,5 @@
 use colored::Colorize as _;
+use itertools::Itertools as _;
 
 use crate::common::ansi;
 use crate::discord_utils::IntoMessage;
@@ -185,30 +186,51 @@ pub async fn process_modal_submission(
 
                 logging::info!("Adding server \"{server_name}\" IP: {full_ip}");
 
+                let mut new_server = bot_data::Server::new(server_creds);
+                new_server.uploaders = bot_data::get_data().default_uploaders.clone();
+
+                let uploaders_list = if new_server.uploaders.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(
+                        "\nDefault uploaders: {}",
+                        new_server
+                            .uploaders
+                            .iter()
+                            .map(|u| u.to_mention())
+                            .join(", ")
+                    )
+                };
+
                 bot_data::update_data(|data| {
-                    data.servers
-                        .insert(server_name.to_string(), bot_data::Server::new(server_creds));
+                    data.servers.insert(server_name.to_string(), new_server);
                 });
 
-                format!("✓ Server \"{}\" is successfully added.", server_name)
-                    .green()
-                    .to_string()
+                let status = ansi(
+                    format!("✓ Server \"{}\" is successfully added.", server_name)
+                        .green()
+                        .to_string(),
+                );
+
+                format!("{status}{uploaders_list}")
             }
             Err(err) => {
                 logging::info!(
                     "Adding server \"{server_name}\" is rejected since connection attempt failed"
                 );
 
-                format!("Error adding server \"{server_name}\"\n✗ {err}")
-                    .red()
-                    .to_string()
+                ansi(
+                    format!("Error adding server \"{server_name}\"\n✗ {err}")
+                        .red()
+                        .to_string(),
+                )
             }
         };
 
         logging::info!("Updating the response to add_server modal submission");
 
         discord_utils::InteractionResponse::new(interaction, http_client)
-            .update(discord_utils::Message::text(ansi(updated_content)))
+            .update(discord_utils::Message::text(updated_content))
             .await
             .log_error();
     }

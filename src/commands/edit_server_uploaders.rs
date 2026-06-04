@@ -258,6 +258,34 @@ pub async fn process_uploaders_submission(
         .log_error();
 }
 
+pub fn make_user_select(
+    current_uploaders: &HashSet<bot_data::Mentionable>,
+) -> discord::component::SelectMenu {
+    let mut default_values = Vec::<discord::component::SelectDefaultValue>::new();
+
+    for uploader in current_uploaders {
+        match *uploader {
+            bot_data::Mentionable::User(user_id) => {
+                default_values.push(discord::component::SelectDefaultValue::User(user_id))
+            }
+            bot_data::Mentionable::Role(role_id) => {
+                default_values.push(discord::component::SelectDefaultValue::Role(role_id))
+            }
+        }
+    }
+
+    discord::SelectMenuBuilder::new(
+        "edit_uploaders_users_list",
+        discord::component::SelectMenuType::Mentionable,
+    )
+    .default_values(default_values)
+    .min_values(0)
+    .max_values(25)
+    .required(false)
+    .placeholder("Uploaders")
+    .build()
+}
+
 fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::Component> {
     let mut components = Vec::<discord::Component>::new();
 
@@ -278,29 +306,9 @@ fn construct_message_components(selected_server: Option<&str>) -> Vec<discord::C
     if let Some(server_name) = selected_server {
         let bot_data = &bot_data::get_data();
         if let Some(server) = bot_data.servers.get(server_name) {
-            let mut current_uploaders = Vec::<discord::component::SelectDefaultValue>::new();
-            for uploader in &server.uploaders {
-                match *uploader {
-                    bot_data::Mentionable::User(user_id) => current_uploaders
-                        .push(discord::component::SelectDefaultValue::User(user_id)),
-                    bot_data::Mentionable::Role(role_id) => current_uploaders
-                        .push(discord::component::SelectDefaultValue::Role(role_id)),
-                }
-            }
-
             components.push(discord::Component::ActionRow(
                 discord::ActionRowBuilder::new()
-                    .component(
-                        discord::SelectMenuBuilder::new(
-                            "edit_uploaders_users_list",
-                            discord::component::SelectMenuType::Mentionable,
-                        )
-                        .default_values(current_uploaders)
-                        .min_values(0)
-                        .max_values(25)
-                        .placeholder("Uploaders")
-                        .build(),
-                    )
+                    .component(make_user_select(&server.uploaders))
                     .build(),
             ));
 

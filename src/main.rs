@@ -44,12 +44,7 @@ async fn start_bot() {
 
         let client_builder = discord::ClientBuilder::new()
             .token(token)
-            .default_allowed_mentions(discord::AllowedMentions {
-                parse: Vec::new(),
-                replied_user: true,
-                roles: Vec::new(),
-                users: Vec::new(),
-            });
+            .default_allowed_mentions(discord::AllowedMentions::default());
         http = std::sync::Arc::new(client_builder.build());
     }
 
@@ -97,6 +92,7 @@ async fn start_bot() {
                 commands::edit_server_uploaders::create_command(),
                 commands::edit_uploader_servers::create_command(),
                 commands::version::create_command(),
+                commands::set_default_uploaders::create_command(),
             ],
         )
         .await
@@ -204,6 +200,10 @@ async fn handle_interaction_create(
                 commands::version::COMMAND => {
                     commands::version::process_command(&interaction, http_client).await;
                 }
+                commands::set_default_uploaders::COMMAND => {
+                    commands::set_default_uploaders::process_command(&interaction, http_client)
+                        .await;
+                }
 
                 commands::upload_blueprints::MESSAGE_COMMAND => {
                     commands::upload_blueprints::process_message_command(
@@ -242,6 +242,14 @@ async fn handle_interaction_create(
                 }
                 commands::remove_server::MODAL_ID => {
                     commands::remove_server::process_modal_submission(
+                        &interaction,
+                        submit_data,
+                        http_client,
+                    )
+                    .await;
+                }
+                commands::set_default_uploaders::MODAL_ID => {
+                    commands::set_default_uploaders::process_modal_submission(
                         &interaction,
                         submit_data,
                         http_client,

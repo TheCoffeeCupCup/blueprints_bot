@@ -85,6 +85,9 @@ pub struct BotData {
 
     #[serde(default)]
     sftp_migration_completed: bool,
+
+    #[serde(default)]
+    pub default_uploaders: HashSet<Mentionable>,
 }
 
 ///////////////////////////////////////////////////

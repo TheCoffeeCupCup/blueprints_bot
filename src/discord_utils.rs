@@ -170,7 +170,8 @@ impl<'a> InteractionResponse<'a> {
 
         let response_data = response_data
             .message_content(message.content)
-            .flags(message.flags);
+            .flags(message.flags)
+            .allowed_mentions(discord::AllowedMentions::default()); // For some reason default allowed mentions doesn't work here.
 
         use discord::InteractionResponseType::ChannelMessageWithSource;
         let response = discord::InteractionResponse {
